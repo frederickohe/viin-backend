@@ -1,5 +1,6 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
+from core.auth.dto.request.password_policy import PASSWORD_MIN_LENGTH
 
 class ResetPassNoAuth(BaseModel):
     email: EmailStr
-    new_password: str
+    new_password: str = Field(..., min_length=PASSWORD_MIN_LENGTH)

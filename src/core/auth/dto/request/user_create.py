@@ -1,13 +1,14 @@
 from datetime import date, datetime
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator
+from core.auth.dto.request.password_policy import PASSWORD_MIN_LENGTH
 
 class UserCreateRequest(BaseModel):  
     fullname: str
     email: str
     phone: Optional[str] = None
     profile_picture_url: Optional[str] = None
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=PASSWORD_MIN_LENGTH)
     
     # Personal Information
     nationality: Optional[str] = None
