@@ -6,11 +6,12 @@ import logging
 import re
 from typing import Optional, Any
 from sqlalchemy.orm import Session
+from core.nlu.config import GROQ_API_KEY, GROQ_BASE_URL, MODEL
 
 logger = logging.getLogger(__name__)
 
 def normalize_file_paths(text: str) -> str:
-    """Normalize file paths in text by removing extra spaces.
+    r"""Normalize file paths in text by removing extra spaces.
     
     Fixes issues where LLM might add spaces in file paths like:
     'C:\path\Autobus_Conceptnote. docx' -> 'C:\path\Autobus_Conceptnote.docx'
@@ -40,11 +41,13 @@ class AutoBus:
             prompts_path: Path to the prompts YAML configuration file.
             db_session: Optional SQLAlchemy database session for agent config operations.
         """
-        # Initialize LangChain ChatOpenAI model
+        # Initialize LangChain via Groq's OpenAI-compatible endpoint
         self.model = ChatOpenAI(
-            model_name="gpt-4",
+            model_name=MODEL,
             temperature=0.5,
-            max_tokens=2096
+            max_tokens=2096,
+            api_key=GROQ_API_KEY,
+            base_url=GROQ_BASE_URL,
         )
         
         with open(prompts_path, 'r') as stream:

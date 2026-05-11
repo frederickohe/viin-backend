@@ -2,7 +2,13 @@ import openai
 import base64
 import logging
 from typing import Dict, List, Any, Optional
-from core.nlu.config import OPENAI_API_KEY, MODEL, MODEL_CONFIG
+from core.nlu.config import (
+    AUDIO_TRANSCRIPTION_MODEL,
+    GROQ_API_KEY,
+    GROQ_BASE_URL,
+    MODEL,
+    MODEL_CONFIG,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -10,9 +16,9 @@ logger = logging.getLogger(__name__)
 class LLMClient:
     """Centralized LLM API client for handling all LLM conversations, including multimodal inputs"""
     
-    def __init__(self):
-        self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        self.model = MODEL
+    def __init__(self, model: Optional[str] = None):
+        self.client = openai.OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL)
+        self.model = model or MODEL
     
     def chat_completion(
         self,
@@ -41,10 +47,7 @@ class LLMClient:
         Returns:
             LLM response as string
         """
-        # Build an `input` payload compatible with the Responses API (supports multimodal)
-        # Build a single text input prompt. For now embed image URL/base64
-        # inline to avoid structured content type errors with the Responses API.
-        input_payload = self._build_messages(
+        messages = self._build_messages(
             system_prompt,
             user_message,
             conversation_history,
@@ -54,86 +57,20 @@ class LLMClient:
         )
 
         try:
-            # Use Responses API which supports multimodal inputs (images/audio)
-            logger.debug("Sending Responses API request: model=%s", self.model)
-            # input_payload may be a string prompt or a structured list; handle both
-            if isinstance(input_payload, str):
-                logger.debug("Responses API input payload is a string (len=%d): %s", len(input_payload), input_payload[:200])
-            else:
-                try:
-                    keys = [m.get('role') for m in input_payload]
-                except Exception:
-                    keys = str(input_payload)
-                logger.debug("Responses API input payload keys: %s", keys)
-            
-            # Ensure we respect the Responses API minimum for max_output_tokens (>=16)
-            out_tokens = max(16, max_tokens)
-            if out_tokens != max_tokens:
-                logger.debug("Adjusted max_output_tokens from %d to minimum %d", max_tokens, out_tokens)
-            response = self.client.responses.create(
+            logger.debug("Sending Groq chat completion request: model=%s", self.model)
+            response = self.client.chat.completions.create(
                 model=self.model,
-                input=input_payload,
+                messages=messages,
                 temperature=temperature,
-                max_output_tokens=out_tokens,
+                max_completion_tokens=max_tokens,
             )
 
-            logger.debug("Responses API call completed: status=%s", getattr(response, 'status', 'unknown'))
-            # Log key response fields for debugging
-            try:
-                # Log concise outputs at INFO to help trace intent failures
-                if getattr(response, "output_text", None):
-                    logger.info("Responses API output_text (truncated): %s", (response.output_text or '')[:1000])
-
-                # Log structured `output` if present at DEBUG
-                output_obj = getattr(response, "output", None)
-                if output_obj is not None:
-                    logger.debug("Responses API 'output' field present. Entries: %d", len(output_obj) if hasattr(output_obj, '__len__') else 1)
-
-                # Attempt a safe full dump at DEBUG level; avoid crashing if to_dict is not available
-                try:
-                    to_dict_fn = getattr(response, "to_dict", None)
-                    if callable(to_dict_fn):
-                        resp_dict = to_dict_fn()
-                        logger.debug("Responses API full payload (truncated): %s", str(resp_dict)[:4000])
-                    else:
-                        logger.debug("Responses API repr payload (truncated): %s", repr(response)[:4000])
-                except Exception as ex:
-                    logger.debug("Failed to serialize Responses API payload: %s", ex)
-            except Exception as ex:
-                logger.debug("Error while logging Responses API payload: %s", ex)
-
-            # Preferred simple accessor when available
-            if getattr(response, "output_text", None):
-                return response.output_text.strip()
-
-            # Fallback: stitch together textual pieces from the structured output
-            parts: List[str] = []
-            for out in getattr(response, "output", []) or []:
-                for c in out.get("content", []) or []:
-                    # common types: 'output_text' or dicts with 'text'
-                    if isinstance(c, dict):
-                        if c.get("type") in ("output_text", "message", "text"):
-                            text = c.get("text") or c.get("content") or c.get("payload")
-                            if isinstance(text, str):
-                                parts.append(text)
-                        elif c.get("type") == "output_fragment":
-                            parts.append(c.get("text", ""))
-                    elif isinstance(c, str):
-                        parts.append(c)
-
-            result_text = "\n".join([p for p in parts if p]).strip()
-            if not result_text:
-                try:
-                    # Attempt to dump structured response for debugging
-                    logger.debug("Responses API raw output: %s", getattr(response, "to_dict", lambda: response)())
-                except Exception:
-                    logger.debug("Responses API raw output (repr): %s", repr(response))
-
-            return result_text
+            message = response.choices[0].message if response.choices else None
+            content = getattr(message, "content", "") if message else ""
+            return content.strip() if isinstance(content, str) else str(content).strip()
 
         except Exception as e:
             logger.error(f"Error in LLM API call: {e}")
-            print(f"Error in LLM API call: {e}")
             return ""
     
     def _build_messages(
@@ -145,66 +82,43 @@ class LLMClient:
         image_base64: Optional[str] = None,
         image_media_type: str = "image/jpeg"
     ) -> List[Dict]:
-        """Build messages for the Responses API."""
+        """Build messages for Groq's OpenAI-compatible chat completions API."""
+        messages: List[Dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        if conversation_history:
+            for msg in conversation_history[-6:]:
+                role = msg.get("role", "user")
+                if role not in {"system", "assistant", "user"}:
+                    role = "user"
+                messages.append({"role": role, "content": msg.get("content", "")})
         
-        # When an image is provided, construct a structured payload
         if image_url or image_base64:
-            messages: List[Dict] = []
-            
-            # Build the full prompt including system instructions and history
-            full_prompt = system_prompt
-            
-            if conversation_history:
-                history_text = "\n".join([
-                    f"{msg.get('role', 'user').upper()}: {msg.get('content', '')}"
-                    for msg in conversation_history[-6:]
-                ])
-                full_prompt = f"{system_prompt}\n\nPrevious conversation:\n{history_text}"
-            
-            full_prompt = f"{full_prompt}\n\nUSER: {user_message}"
-            
-            # Build the user content
             user_content: List[Dict[str, Any]] = [
                 {
-                    "type": "input_text",
-                    "text": full_prompt
+                    "type": "text",
+                    "text": user_message
                 }
             ]
-            
-            # Add image - convert base64 to data URL if needed
+
             if image_base64:
-                # For base64, create a data URL
                 data_url = f"data:{image_media_type};base64,{image_base64}"
                 user_content.append({
-                    "type": "input_image",
-                    "image_url": data_url,
+                    "type": "image_url",
+                    "image_url": {"url": data_url},
                 })
             elif image_url:
                 user_content.append({
-                    "type": "input_image", 
-                    "image_url": image_url,
+                    "type": "image_url",
+                    "image_url": {"url": image_url},
                 })
-            
-            messages = [{
-                "role": "user",
-                "content": user_content
-            }]
-            
+
+            messages.append({"role": "user", "content": user_content})
             return messages
-        
-        # No image provided: simple text-only prompt
-        parts: List[str] = []
-        if system_prompt:
-            parts.append(f"SYSTEM: {system_prompt}")
-        
-        if conversation_history:
-            parts.append("CONVERSATION HISTORY:")
-            for msg in conversation_history[-6:]:
-                parts.append(f"{msg.get('role', 'user')}: {msg.get('content', '')}")
-        
-        parts.append(f"USER: {user_message}")
-        
-        return "\n\n".join(parts)
+
+        messages.append({"role": "user", "content": user_message})
+        return messages
     
     def structured_completion(
         self,
@@ -230,7 +144,7 @@ class LLMClient:
     
     def transcribe_audio(self, audio_file_path: str) -> Optional[str]:
         """
-        Transcribe audio file to text using OpenAI Whisper API
+        Transcribe audio file to text using Groq's transcription API
         
         Args:
             audio_file_path: Path to the audio file or file object
@@ -243,7 +157,7 @@ class LLMClient:
             
             with open(audio_file_path, "rb") as audio_file:
                 transcript = self.client.audio.transcriptions.create(
-                    model="whisper-1",
+                    model=AUDIO_TRANSCRIPTION_MODEL,
                     file=audio_file,
                     language="en"  # Specify English; adjust as needed for multilingual support
                 )
@@ -258,7 +172,7 @@ class LLMClient:
     
     def transcribe_audio_from_bytes(self, audio_bytes: bytes, filename: str = "audio.mp3") -> Optional[str]:
         """
-        Transcribe audio from bytes using OpenAI Whisper API
+        Transcribe audio from bytes using Groq's transcription API
         
         Args:
             audio_bytes: Audio file content as bytes
@@ -275,7 +189,7 @@ class LLMClient:
             audio_file.name = filename
             
             transcript = self.client.audio.transcriptions.create(
-                model="whisper-1",
+                model=AUDIO_TRANSCRIPTION_MODEL,
                 file=audio_file,
                 language="en"  # Specify English; adjust as needed
             )

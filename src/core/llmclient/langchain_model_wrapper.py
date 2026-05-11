@@ -1,6 +1,6 @@
 """LangChain Model Wrapper for AutoBus
 
-This module provides a LangChain-compatible wrapper around the OpenAI API,
+This module provides a LangChain-compatible wrapper around Groq's OpenAI-compatible API,
 integrating with the existing LLMClient while supporting LangChain's agent and tool framework.
 """
 
@@ -10,6 +10,7 @@ from langchain_openai import ChatOpenAI
 from langchain.schema import BaseMessage, HumanMessage, SystemMessage, AIMessage
 import os
 from dotenv import load_dotenv
+from core.nlu.config import GROQ_API_KEY, GROQ_BASE_URL, MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ load_dotenv(env_path)
 
 class LangChainOpenAIWrapper:
     """
-    LangChain-compatible wrapper for OpenAI's ChatGPT API.
+    LangChain-compatible wrapper for Groq-hosted chat models.
     
     This wrapper provides a consistent interface for use with LangChain agents and tools
     while maintaining compatibility with the existing LLMClient infrastructure.
@@ -28,41 +29,42 @@ class LangChainOpenAIWrapper:
     
     def __init__(
         self,
-        model_name: str = "gpt-4",
+        model_name: str = MODEL,
         temperature: float = 0.5,
         max_tokens: int = 2096,
         api_key: Optional[str] = None
     ):
         """
-        Initialize the LangChain OpenAI wrapper.
+        Initialize the LangChain Groq wrapper.
         
         Args:
-            model_name: OpenAI model name (default: "gpt-4")
+            model_name: Groq model name
             temperature: Creativity level (0-1), default 0.5
             max_tokens: Maximum tokens for responses, default 2096
-            api_key: OpenAI API key (defaults to OPENAI_API_KEY env var)
+            api_key: Groq API key (defaults to GROQ_API_KEY env var)
         """
         self.model_name = model_name
         self.temperature = temperature
         self.max_tokens = max_tokens
         
         # Use provided API key or get from environment
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.api_key = api_key or GROQ_API_KEY or os.getenv("GROQ_API_KEY")
         
-        # Initialize the LangChain ChatOpenAI model
+        # Initialize LangChain via Groq's OpenAI-compatible endpoint
         self.llm = ChatOpenAI(
             model_name=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
             api_key=self.api_key,
+            base_url=GROQ_BASE_URL,
             request_timeout=120
         )
         
-        logger.info(f"Initialized LangChain OpenAI wrapper with model: {model_name}")
+        logger.info(f"Initialized LangChain Groq wrapper with model: {model_name}")
     
     def __call__(self, prompt: str, **kwargs) -> str:
         """
-        Process a prompt using OpenAI.
+        Process a prompt using Groq.
         
         Args:
             prompt: The input prompt/message

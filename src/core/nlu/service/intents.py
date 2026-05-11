@@ -1,6 +1,6 @@
 from typing import Dict, List, Any, Tuple
 import logging
-from core.nlu.config import INTENTS, SYSTEM_PROMPTS
+from core.nlu.config import INTENTS, MODEL, SYSTEM_PROMPTS
 from core.nlu.service.llmclient import LLMClient  # Add this import
 from utilities.phone_utils import extract_ghana_phone_numbers_from_text, clean_ocr_text
 
@@ -10,7 +10,7 @@ class IntentDetector:
     def __init__(self, use_advanced_model: bool = True):
         self.intents = INTENTS
         # Use advanced model for intent extraction if specified
-        model = "gpt-5.4-2026-03-05" if use_advanced_model else None
+        model = MODEL if use_advanced_model else None
         self.llm_client = LLMClient(model=model)
 
     def detect_intent_and_slots(self, user_message: str, conversation_history: List[Dict], current_intent: str = None, media_context: Dict = None) -> Tuple[str, Dict, List[str]]:

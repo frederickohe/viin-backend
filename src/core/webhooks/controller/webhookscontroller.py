@@ -612,7 +612,7 @@ def handle_image_message(message: dict, phone: str, phone_id: str, db: Session):
 def handle_audio_message(message: dict, phone: str, phone_id: str, db: Session):
     """
     Handle audio messages from users.
-    Audio is transcribed using OpenAI Whisper and processed as text.
+    Audio is transcribed through the configured Groq transcription model and processed as text.
     """
     try:
         audio_data = message.get("audio", {})

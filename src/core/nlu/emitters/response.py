@@ -3,7 +3,7 @@ from typing import Dict, Any
 class ResponseFormatter:
     @staticmethod
     def format_response(intent: str, message_type: str, **kwargs) -> str:
-        """Format responses in a friendly financial assistant style"""
+        """Format responses in a friendly business assistant style"""
         
         if message_type == "missing_slots":
             return f"{kwargs.get('message', 'I would need a few more details to complete the task,')} {kwargs.get('prompt', '')}"

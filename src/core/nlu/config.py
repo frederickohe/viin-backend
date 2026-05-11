@@ -6,11 +6,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # API Configuration
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY environment variable is not set")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY environment variable is not set")
 
-MODEL = "gpt-4o"  # Multimodal model supporting text, images, audio, and video
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+MODEL = os.getenv("LLM_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+AUDIO_TRANSCRIPTION_MODEL = os.getenv("AUDIO_TRANSCRIPTION_MODEL", "whisper-large-v3")
 
 # Local Model Configuration
 MODEL_CONFIG = {
@@ -298,11 +300,11 @@ SYSTEM_PROMPTS = {
 # Enhanced Response Templates
 RESPONSE_TEMPLATES = {
     "conversational": {
-        "greeting": "Hello! 👋 I'm Autobus, your AI financial assistant. How can I help you today?",
+        "greeting": "Hello! 👋 I'm Autobus, your AI business operations assistant. How can I help you today?",
         "normal_conversation": "{response}",
         "business_conversation": "{response}",
         "small_talk": "{response}",
-        "goodbye": "Goodbye! 👋 Feel free to reach out if you need any financial assistance!"
+        "goodbye": "Goodbye! 👋 Feel free to reach out if you need help with your business operations."
     },
     
     "email": {

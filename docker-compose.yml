@@ -118,8 +118,11 @@ services:
       # Auto Migration Flag
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
 
-      # Language Model API Key
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-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}
+      # Language Model Configuration
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      LLM_MODEL: ${LLM_MODEL:-meta-llama/llama-4-scout-17b-16e-instruct}
+      AUDIO_TRANSCRIPTION_MODEL: ${AUDIO_TRANSCRIPTION_MODEL:-whisper-large-v3}
 
       BLOTATO_API_KEY: ${BLOTATO_API_KEY:-your_blotato_api_key_here}
       BLOTATO_CLIENT_ID: ${BLOTATO_CLIENT_ID:-your_blotato_client_id_here}
