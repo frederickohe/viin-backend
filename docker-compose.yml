@@ -150,7 +150,9 @@ services:
       CHATWOOT_BASE_URL: ${CHATWOOT_BASE_URL:-http://rails:3000}
       CHATWOOT_PLATFORM_API_TOKEN: ${CHATWOOT_PLATFORM_API_TOKEN:-}
 
-      # Qdrant RAG stack (`systems/qdrant/docker-compose.yml`, network `greenbrain_rag`)
+      # Qdrant RAG stack: use `http://rag-api:8088` only when backend joins `greenbrain_rag`
+      # (see `networks` below). Otherwise use a host-reachable URL, e.g.
+      # `http://host.docker.internal:8088` if the RAG API port is published.
       RAG_SERVICE_URL: ${RAG_SERVICE_URL:-}
       RAG_SERVICE_API_KEY: ${RAG_SERVICE_API_KEY:-}
       RAG_CONVERSATIONS_ENABLED: ${RAG_CONVERSATIONS_ENABLED:-}
@@ -173,6 +175,8 @@ services:
       # Create it once via: `docker network create postiz-network`
       # Then ensure the Postiz compose also uses `postiz-network` by name.
       - postiz-network
+      # RAG API (`systems/qdrant/docker-compose.yml`); required for `RAG_SERVICE_URL=http://rag-api:8088`
+      - greenbrain_rag
 
 volumes:
   postgres_data:
@@ -188,3 +192,6 @@ networks:
   postiz-network:
     external: true
     name: postiz-network
+  greenbrain_rag:
+    external: true
+    name: greenbrain_rag
