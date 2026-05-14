@@ -1,13 +1,27 @@
 import hashlib
 import os
 import uuid
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 import httpx
 
 
 class PostizAPIError(RuntimeError):
     pass
+
+
+def normalize_postiz_company(company: str, *, fallback: str = "Autobus Client") -> str:
+    """
+    Postiz `CreateOrgUserDto` requires company length 3–128 (class-validator).
+    Autobus user fields can be shorter (e.g. two-letter brand); use a longer fallback.
+    """
+    name = (company or "").strip()
+    if len(name) >= 3:
+        return name[:128]
+    fb = (fallback or "Autobus Client").strip()
+    if len(fb) >= 3:
+        return fb[:128]
+    return "Org"[:128]
 
 
 class PostizClient:
@@ -40,6 +54,7 @@ class PostizClient:
         - organization id
         - organization public API key (used for `/api/public/v1/*`)
         """
+        company_norm = normalize_postiz_company(company)
         async with httpx.AsyncClient(
             timeout=timeout_s,
             follow_redirects=True,
@@ -50,11 +65,17 @@ class PostizClient:
                     "provider": "LOCAL",
                     "email": email,
                     "password": password,
-                    "company": company,
+                    "company": company_norm,
                 },
             )
-            # Postiz may respond 409 if the user/org already exists. In that case we'll just login.
-            if reg.status_code >= 400 and reg.status_code != 409:
+            # Postiz returns 400 with plain-text body for business errors (see auth.controller catch).
+            # Duplicate email is 400 "Email already exists", not 409 — still recoverable via login.
+            reg_ok = reg.status_code < 400
+            duplicate_email = (
+                reg.status_code == 400
+                and "email already exists" in (reg.text or "").lower()
+            )
+            if not reg_ok and reg.status_code != 409 and not duplicate_email:
                 raise PostizAPIError(
                     f"Postiz register failed ({reg.status_code}): {reg.text}"
                 )

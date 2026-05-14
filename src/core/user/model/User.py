@@ -68,7 +68,7 @@ class User(Base):
     # Membership Information
     company: Mapped[Optional[str]] = mapped_column(String, default=None)
     current_branch: Mapped[Optional[str]] = mapped_column(String(100))
-    staff_id: Mapped[Optional[str]] = mapped_column(String(50), unique=True)
+    staff_id: Mapped[Optional[str]] = mapped_column(String(50))
     
     # Professional Information
     occupation: Mapped[Optional[str]] = mapped_column(String(100))
