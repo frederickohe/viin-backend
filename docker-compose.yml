@@ -142,6 +142,13 @@ services:
       POSTIZ_BASE_URL: ${POSTIZ_BASE_URL:-http://postiz:5000}
       # Browser-facing Postiz URL used in authorization links.
       POSTIZ_PUBLIC_URL: ${POSTIZ_PUBLIC_URL:-http://localhost:4007}
+      # Optional: stable Postiz password derivation (user_id|email|pepper). If unset, Autobus
+      # password hash is mixed in — changing the Autobus password breaks Postiz login for
+      # accounts created under the old hash until you delete the Postiz user or set pepper
+      # and re-provision.
+      POSTIZ_DERIVE_PEPPER: ${POSTIZ_DERIVE_PEPPER:-}
+      # When true, enables POST /api/v1/integrations/provision-self-test (destructive upstream).
+      INTEGRATIONS_SELF_TEST_ENABLED: ${INTEGRATIONS_SELF_TEST_ENABLED:-false}
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
 
       # Chatwoot (self-hosted) integration (optional)

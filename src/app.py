@@ -26,6 +26,7 @@ from core.paystack.controller.paystack_controller import paystack_routes
 from core.agent.controller.agentcontroller import agent_routes
 from core.socialmedia.controller.socialmedia_controller import social_routes
 from core.chatwoot.controller.chatwoot_controller import chatwoot_routes
+from core.integrations.controller.integration_test_controller import integration_routes
 from core.product.controller.product_controller import product_routes
 from core.orders.controller.order_controller import order_routes
 from core.interventions.controller.intervention_controller import intervention_routes
@@ -114,6 +115,7 @@ app.include_router(paystack_routes, prefix="/api/v1/paystack", tags=["Paystack R
 app.include_router(agent_routes, prefix="/api/v1/agent", tags=["Agent Routes"])
 app.include_router(social_routes, prefix="/api/v1/social", tags=["Social Media Routes"])
 app.include_router(chatwoot_routes, prefix="/api/v1/chatwoot", tags=["Chatwoot Routes"])
+app.include_router(integration_routes, prefix="/api/v1/integrations", tags=["Integrations (self-test)"])
 app.include_router(product_routes, prefix="/api/v1/products", tags=["Product Routes"])
 app.include_router(order_routes, prefix="/api/v1/orders", tags=["Order Routes"])
 app.include_router(intervention_routes, prefix="/api/v1/interventions", tags=["Interventions Routes"])

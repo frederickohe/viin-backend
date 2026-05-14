@@ -1,13 +1,48 @@
 import hashlib
 import os
+import re
 import uuid
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
+from urllib.parse import unquote
 
 import httpx
 
 
 class PostizAPIError(RuntimeError):
     pass
+
+
+def _normalize_postiz_email(email: str) -> str:
+    """
+    Postiz lowercases email on register but not on login; DB lookup is exact match.
+    """
+    return (email or "").strip().lower()
+
+
+def _extract_session_jwt(res: httpx.Response) -> Optional[str]:
+    """
+    Postiz attaches the session JWT to the `auth` response header when NOT_SECURED is set,
+    and/or to Set-Cookie. Autobus calls Postiz by Docker hostname (e.g. postiz:5000) while
+    cookies may be scoped to the public domain — forward JWT explicitly on /api/user/self.
+    """
+    auth = res.headers.get("auth")
+    if auth:
+        return auth.strip()
+    raw = getattr(res.headers, "raw", None) or []
+    for key, value in raw:
+        if key.lower() != b"set-cookie":
+            continue
+        text = value.decode("latin-1", errors="replace")
+        m = re.search(r"(?i)\bauth=([^;]+)", text)
+        if m:
+            return unquote(m.group(1).strip().strip('"'))
+    return None
+
+
+def _auth_request_headers(jwt: Optional[str]) -> Dict[str, str]:
+    if not jwt:
+        return {}
+    return {"auth": jwt}
 
 
 def normalize_postiz_company(company: str, *, fallback: str = "Autobus Client") -> str:
@@ -55,6 +90,8 @@ class PostizClient:
         - organization public API key (used for `/api/public/v1/*`)
         """
         company_norm = normalize_postiz_company(company)
+        email_norm = _normalize_postiz_email(email)
+        session_jwt: Optional[str] = None
         async with httpx.AsyncClient(
             timeout=timeout_s,
             follow_redirects=True,
@@ -63,7 +100,7 @@ class PostizClient:
                 self._url("/api/auth/register"),
                 json={
                     "provider": "LOCAL",
-                    "email": email,
+                    "email": email_norm,
                     "password": password,
                     "company": company_norm,
                 },
@@ -80,14 +117,20 @@ class PostizClient:
                     f"Postiz register failed ({reg.status_code}): {reg.text}"
                 )
 
-            me = await client.get(self._url("/api/user/self"))
+            if reg_ok:
+                session_jwt = _extract_session_jwt(reg) or session_jwt
+
+            me = await client.get(
+                self._url("/api/user/self"),
+                headers=_auth_request_headers(session_jwt),
+            )
             if me.status_code == 401:
                 # Some Postiz builds do not establish an authenticated session on register.
                 login = await client.post(
                     self._url("/api/auth/login"),
                     json={
                         "provider": "LOCAL",
-                        "email": email,
+                        "email": email_norm,
                         "password": password,
                         "providerToken": "",
                     },
@@ -96,7 +139,11 @@ class PostizClient:
                     raise PostizAPIError(
                         f"Postiz login failed ({login.status_code}): {login.text}"
                     )
-                me = await client.get(self._url("/api/user/self"))
+                session_jwt = _extract_session_jwt(login) or session_jwt
+                me = await client.get(
+                    self._url("/api/user/self"),
+                    headers=_auth_request_headers(session_jwt),
+                )
 
             if me.status_code >= 400:
                 raise PostizAPIError(f"Postiz self failed ({me.status_code}): {me.text}")
@@ -121,6 +168,7 @@ class PostizClient:
         Login against Postiz LOCAL auth provider.
         Returns the response body, and raises for HTTP errors.
         """
+        email_norm = _normalize_postiz_email(email)
         async with httpx.AsyncClient(
             timeout=timeout_s,
             follow_redirects=True,
@@ -129,7 +177,7 @@ class PostizClient:
                 self._url("/api/auth/login"),
                 json={
                     "provider": "LOCAL",
-                    "email": email,
+                    "email": email_norm,
                     "password": password,
                     "providerToken": "",
                 },
@@ -195,7 +243,17 @@ def derive_postiz_password(
     Deterministically derive a Postiz LOCAL password from Autobus user identity.
     This allows Backend/Frontend to generate the same password for Postiz register/login
     without storing Postiz plaintext credentials.
+
+    If ``POSTIZ_DERIVE_PEPPER`` is set (recommended in production), the hash no longer
+    depends on the Autobus password hash, so changing the Autobus password does not
+    desync Postiz login. When unset, legacy behaviour uses ``autobus_password_hash``
+    (existing Postiz users keep working until you rotate or delete them).
     """
-    seed = f"{user_id}|{email.lower()}|{autobus_password_hash}"
+    email_l = (email or "").strip().lower()
+    pepper = os.getenv("POSTIZ_DERIVE_PEPPER", "").strip()
+    if pepper:
+        seed = f"{user_id}|{email_l}|{pepper}"
+    else:
+        seed = f"{user_id}|{email_l}|{autobus_password_hash}"
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()
 

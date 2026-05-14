@@ -152,6 +152,25 @@ class ChatwootClient:
         )
         return account_id, user_id, access_token
 
+    async def list_accounts(
+        self,
+        *,
+        page: int = 1,
+        timeout_s: float = 15.0,
+    ) -> Dict[str, Any]:
+        """Platform API probe: list accounts (validates URL + platform token)."""
+        async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True) as client:
+            res = await client.get(
+                self._url("/platform/api/v1/accounts"),
+                headers=self._headers(),
+                params={"page": int(page)},
+            )
+            if res.status_code >= 400:
+                raise ChatwootAPIError(
+                    f"Chatwoot list accounts failed ({res.status_code}): {res.text}"
+                )
+            return res.json() if res.text.strip() else {}
+
 
 def chatwoot_enabled() -> bool:
     return bool(os.getenv("CHATWOOT_BASE_URL", "").strip()) and bool(
