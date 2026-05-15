@@ -83,7 +83,8 @@ class ConversationListService:
             self.db.query(DailyConversation)
             .filter(
                 DailyConversation.user_id.in_(user_ids),
-                DailyConversation.conversation_state["conversation_lifecycle"].astext == "completed",
+                DailyConversation.conversation_state["conversation_lifecycle"].as_string()
+                == "completed",
             )
             .order_by(DailyConversation.updated_at.desc())
             .offset(skip)
@@ -95,7 +96,7 @@ class ConversationListService:
             self.db.query(DailyConversation)
             .filter(
                 DailyConversation.user_id.in_(user_ids),
-                DailyConversation.conversation_state["intervention_active"].astext == "true",
+                DailyConversation.conversation_state["intervention_active"].as_boolean().is_(True),
             )
             .order_by(DailyConversation.updated_at.desc())
             .offset(skip)
