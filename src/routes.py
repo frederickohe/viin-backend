@@ -35,6 +35,7 @@ def home():
             "File / Document Management",
             "Message and Task Queuing",
             "Notifications",
+            "Media Generation (image + video via Google)",
         ],
         "note": "Pay attention to the API Documentation via README.md.",
     }

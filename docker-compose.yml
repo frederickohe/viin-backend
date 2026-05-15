@@ -124,6 +124,15 @@ services:
       LLM_MODEL: ${LLM_MODEL:-meta-llama/llama-4-scout-17b-16e-instruct}
       AUDIO_TRANSCRIPTION_MODEL: ${AUDIO_TRANSCRIPTION_MODEL:-whisper-large-v3}
 
+      # Google image (Nana Banana) + video (Veo) generation
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      NANA_BANANA_BASE_URL: ${NANA_BANANA_BASE_URL:-https://generativelanguage.googleapis.com/v1beta}
+      NANA_BANANA_MODEL: ${NANA_BANANA_MODEL:-}
+      NANA_BANANA_USE_X_GOOG_API_KEY: ${NANA_BANANA_USE_X_GOOG_API_KEY:-false}
+      VEO_GENERATE_URL: ${VEO_GENERATE_URL:-https://generativelanguage.googleapis.com/v1beta}
+      VEO_MODEL: ${VEO_MODEL:-}
+      VEO_USE_X_GOOG_API_KEY: ${VEO_USE_X_GOOG_API_KEY:-false}
+
       BLOTATO_API_KEY: ${BLOTATO_API_KEY:-your_blotato_api_key_here}
       BLOTATO_CLIENT_ID: ${BLOTATO_CLIENT_ID:-your_blotato_client_id_here}
       BLOTATO_CLIENT_SECRET: ${BLOTATO_CLIENT_SECRET:-your_blotato_client_secret_here}

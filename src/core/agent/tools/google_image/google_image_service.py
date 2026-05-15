@@ -1,14 +1,39 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 
 import os
+
+_env_path = Path(__file__).resolve().parents[5] / ".env"
+load_dotenv(dotenv_path=_env_path)
 
 
 class GoogleImageGenerationError(RuntimeError):
     pass
+
+
+def _extract_first_mime_type(value: Any) -> str | None:
+    if isinstance(value, dict):
+        for key in ("inlineData", "inline_data"):
+            inline = value.get(key)
+            if isinstance(inline, dict):
+                mime = inline.get("mimeType") or inline.get("mime_type")
+                if isinstance(mime, str) and mime.strip():
+                    return mime.strip()
+        for v in value.values():
+            found = _extract_first_mime_type(v)
+            if found:
+                return found
+    if isinstance(value, list):
+        for v in value:
+            found = _extract_first_mime_type(v)
+            if found:
+                return found
+    return None
 
 
 def _extract_first_base64_image(value: Any) -> str | None:
@@ -57,6 +82,7 @@ class GoogleImageService:
         self._base_url = os.environ.get("NANA_BANANA_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
         self._model = os.environ.get("NANA_BANANA_MODEL", "").strip()
         self._use_x_goog = os.environ.get("NANA_BANANA_USE_X_GOOG_API_KEY", "false").lower() == "true"
+        self.last_mime_type: str | None = None
 
         if not self._api_key:
             raise GoogleImageGenerationError("GOOGLE_API_KEY is not set")
@@ -103,5 +129,6 @@ class GoogleImageService:
         extracted = _extract_first_base64_image(data)
         if not extracted:
             raise GoogleImageGenerationError("No base64 image data found in Google image API response")
+        self.last_mime_type = _extract_first_mime_type(data) or "image/png"
         return extracted
 

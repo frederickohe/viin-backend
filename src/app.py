@@ -24,6 +24,7 @@ from core.customers.controller.customer_controller import customer_routes
 from core.nlu.controller.nlucontroller import nlu_routes
 from core.paystack.controller.paystack_controller import paystack_routes
 from core.agent.controller.agentcontroller import agent_routes
+from core.media.controller.media_controller import media_routes
 from core.socialmedia.controller.socialmedia_controller import social_routes
 from core.chatwoot.controller.chatwoot_controller import chatwoot_routes
 from core.integrations.controller.integration_test_controller import integration_routes
@@ -114,6 +115,7 @@ app.include_router(webhooks_routes, prefix="/api/v1/webhooks", tags=["Webhooks R
 app.include_router(nlu_routes, prefix="/api/v1/nlu", tags=["NLU Routes"])
 app.include_router(paystack_routes, prefix="/api/v1/paystack", tags=["Paystack Routes"])
 app.include_router(agent_routes, prefix="/api/v1/agent", tags=["Agent Routes"])
+app.include_router(media_routes, prefix="/api/v1/media", tags=["Media Generation"])
 app.include_router(social_routes, prefix="/api/v1/social", tags=["Social Media Routes"])
 app.include_router(chatwoot_routes, prefix="/api/v1/chatwoot", tags=["Chatwoot Routes"])
 app.include_router(integration_routes, prefix="/api/v1/integrations", tags=["Integrations (self-test)"])

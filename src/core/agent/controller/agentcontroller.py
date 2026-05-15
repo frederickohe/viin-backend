@@ -1,18 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, Form
-from starlette.responses import PlainTextResponse
+from fastapi import APIRouter, Depends, HTTPException
 from another_fastapi_jwt_auth import AuthJWT
 from another_fastapi_jwt_auth.exceptions import MissingTokenError
 import jwt
 from sqlalchemy.orm import Session
 from core.agent.dto.commandreqeust import CommandRequest
-from core.exceptions import *
-from core.auth.dto.request.user_create import UserCreateRequest
-from core.auth.service.authservice import AuthService
 from utilities.dbconfig import SessionLocal
 from core.agent.agent import AutoBus
 from core.agent.dto.media_generation_request import MediaGenerationRequest
-from core.agent.tools.google_image.google_image_service import GoogleImageService, GoogleImageGenerationError
-from core.agent.tools.google_veo.google_veo_service import GoogleVeoService, GoogleVeoGenerationError
+from core.media.controller.media_controller import generate_image, generate_video
+from core.media.dto.media_generation_response import ImageGenerationResponse, VideoGenerationResponse
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
@@ -70,27 +66,14 @@ def agent(query: CommandRequest, db: Session = Depends(get_db)):
     )
 
 
-@agent_routes.post("/generate-image", response_class=PlainTextResponse)
-async def generate_image(req: MediaGenerationRequest):
-    try:
-        service = GoogleImageService()
-        b64 = await service.generate_image_base64(req.prompt, user_id=req.user_id)
-        return PlainTextResponse(content=b64, media_type="text/plain")
-    except GoogleImageGenerationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error("Image generation failed: %s", str(e), exc_info=True)
-        raise HTTPException(status_code=500, detail="Image generation failed")
+@agent_routes.post("/generate-image", response_model=ImageGenerationResponse)
+async def agent_generate_image(req: MediaGenerationRequest):
+    return await generate_image(req)
 
 
-@agent_routes.post("/generate-video", response_class=PlainTextResponse)
-async def generate_video(req: MediaGenerationRequest):
-    try:
-        service = GoogleVeoService()
-        url = await service.generate_video_and_store(req.prompt, user_id=req.user_id)
-        return PlainTextResponse(content=url, media_type="text/plain")
-    except GoogleVeoGenerationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error("Video generation failed: %s", str(e), exc_info=True)
-        raise HTTPException(status_code=500, detail="Video generation failed")
+@agent_routes.post("/generate-video", response_model=VideoGenerationResponse)
+async def agent_generate_video(
+    req: MediaGenerationRequest,
+    store: bool = False,
+):
+    return await generate_video(req, store=store)

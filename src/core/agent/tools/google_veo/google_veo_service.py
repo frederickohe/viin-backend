@@ -4,11 +4,16 @@ import os
 import re
 import tempfile
 import uuid
+from pathlib import Path
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 
 from core.cloudstorage.service.storageservice import StorageService
+
+_env_path = Path(__file__).resolve().parents[5] / ".env"
+load_dotenv(dotenv_path=_env_path)
 
 
 class GoogleVeoGenerationError(RuntimeError):
@@ -17,9 +22,13 @@ class GoogleVeoGenerationError(RuntimeError):
 
 def _extract_first_url(value: Any) -> str | None:
     if isinstance(value, str):
-        m = re.search(r"https?://\\S+", value)
+        m = re.search(r"https?://\S+", value)
         return m.group(0) if m else None
     if isinstance(value, dict):
+        for key in ("fileUri", "file_uri", "uri", "downloadUri", "download_uri"):
+            uri = value.get(key)
+            if isinstance(uri, str) and uri.strip().startswith(("http://", "https://", "gs://")):
+                return uri.strip()
         for v in value.values():
             url = _extract_first_url(v)
             if url:
