@@ -14,26 +14,27 @@ logger = logging.getLogger(__name__)
 conversation_routes = APIRouter()
 
 
-@conversation_routes.get("", response_model=ConversationListResponseDTO)
-def list_conversations(
+@conversation_routes.get("/me", response_model=ConversationListResponseDTO)
+def list_my_conversations(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     authjwt: AuthJWT = Depends(validate_token),
 ):
     """
-    List conversations grouped for the admin inbox:
+    List the authenticated user's conversations, grouped as:
     - completed: sessions with conversation_lifecycle == completed
     - intervention_active: sessions where a human agent handover is active
     """
-    _ = authjwt
     try:
+        user_id = authjwt.get_jwt_subject()
         service = ConversationListService(db)
-        completed, intervention_active = service.list_grouped_conversations(
-            skip=skip, limit=limit
+        completed, intervention_active = service.list_grouped_conversations_for_user(
+            user_id, skip=skip, limit=limit
         )
         logger.info(
-            "[CONVERSATION_CONTROLLER] Listed conversations completed=%s intervention_active=%s",
+            "[CONVERSATION_CONTROLLER] Listed conversations for user %s completed=%s intervention_active=%s",
+            user_id,
             len(completed),
             len(intervention_active),
         )
