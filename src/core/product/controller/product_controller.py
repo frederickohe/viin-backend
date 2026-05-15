@@ -48,6 +48,36 @@ def get_product_by_name(
         )
 
 
+@product_routes.get("/user/{user_id}", response_model=List[ProductResponseDTO])
+def list_products_by_user(
+    user_id: str = Path(..., description="User ID, email, or phone number"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    category: str = Query(None, description="Filter by category"),
+    db: Session = Depends(get_db),
+    authjwt: AuthJWT = Depends(validate_token),
+):
+    """Get all products for a particular user."""
+    _ = authjwt
+    try:
+        logger.info(f"[PRODUCT_CONTROLLER] Listing products for user: {user_id}")
+
+        product_service = ProductService(db)
+        products = product_service.get_products_by_user(user_id, skip, limit, category)
+
+        logger.info(f"[PRODUCT_CONTROLLER] Found {len(products)} products for user {user_id}")
+        return [ProductResponseDTO.from_product(p) for p in products]
+
+    except Exception as e:
+        logger.error(
+            f"[PRODUCT_CONTROLLER] Error listing products for user: {str(e)}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving products for user: {str(e)}",
+        )
+
+
 @product_routes.post("/", response_model=ProductResponseDTO)
 def create_product(
     request: ProductCreateDTO,
@@ -56,10 +86,11 @@ def create_product(
 ):
     """Create a new product. Inventory is automatically created."""
     try:
-        logger.info(f"[PRODUCT_CONTROLLER] Creating product: {request.name}")
+        owner_id = authjwt.get_jwt_subject()
+        logger.info(f"[PRODUCT_CONTROLLER] Creating product: {request.name} for user: {owner_id}")
 
         product_service = ProductService(db)
-        success, product, message = product_service.create_product(request)
+        success, product, message = product_service.create_product(request, user_id=owner_id)
 
         if not success:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)

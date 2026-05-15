@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from core.interventions.model.Intervention import Intervention
+from core.notification.service.event_notification_service import EventNotificationService
 
 
 class InterventionService:
@@ -49,6 +50,18 @@ class InterventionService:
         self.db.add(intervention)
         self.db.commit()
         self.db.refresh(intervention)
+
+        try:
+            EventNotificationService(self.db).notify_intervention_active(
+                user_id=user_id,
+                intervention_id=int(intervention.id),
+                trigger=trigger,
+                reason=reason,
+                conversation_date=str(conv_date),
+            )
+        except Exception:
+            pass
+
         return intervention
 
     def close_intervention(self, *, intervention_id: int, user_id: str) -> Intervention:

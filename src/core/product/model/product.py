@@ -26,6 +26,12 @@ class Product(Base):
         index=True
     )
     inventory_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    user_id: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
 
     # Product Details
     photo: Mapped[str] = mapped_column(String(2048), nullable=False)

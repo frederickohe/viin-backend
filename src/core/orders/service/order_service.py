@@ -15,6 +15,7 @@ from core.orders.model.order import (
 from core.orders.dto.order_create_dto import OrderCreateDTO
 from core.orders.dto.order_update_dto import OrderUpdateDTO
 from core.orders.dto.order_response_dto import OrderResponseDTO
+from core.notification.service.event_notification_service import EventNotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,16 @@ class OrderService:
             self.db.refresh(order)
 
             logger.info(f"[ORDER_SERVICE] Order created successfully: {order.order_number}")
+
+            try:
+                EventNotificationService(self.db).notify_order_created(order)
+            except Exception as notify_exc:
+                logger.error(
+                    "[ORDER_SERVICE] Order created but notification failed: %s",
+                    notify_exc,
+                    exc_info=True,
+                )
+
             return True, order, f"Order {order.order_number} created successfully!"
 
         except Exception as e:

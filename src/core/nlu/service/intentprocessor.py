@@ -528,7 +528,7 @@ class IntentProcessor:
         except Exception as e:
             return f"❌ Invalid product details: {str(e)}"
 
-        success, product, message = product_service.create_product(product_data)
+        success, product, message = product_service.create_product(product_data, user_id=user_id)
         if not success:
             return f"❌ {message}"
         if not product:
@@ -618,7 +618,7 @@ class IntentProcessor:
         product_service = ProductService(db)
 
         category = slots.get("category")
-        products = product_service.get_all_products(category=category)
+        products = product_service.get_products_by_user(user_id, category=category)
         if not products:
             return "📦 No products found in your inventory yet."
 

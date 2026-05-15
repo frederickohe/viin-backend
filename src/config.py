@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     # Logging levels
     LOG_LEVEL: str = os.environ.get('LOG_LEVEL', 'INFO')
 
+    # Comma-separated users.id values that receive admin inbox notifications
+    ADMIN_NOTIFICATION_USER_IDS: str = os.environ.get("ADMIN_NOTIFICATION_USER_IDS", "")
+    SMS_NOTIFICATION_ENABLED: bool = os.environ.get("SMS_NOTIFICATION_ENABLED", "true").lower() == "true"
+
     @property
     def DB_DSN(self) -> URL:
         return URL.create(

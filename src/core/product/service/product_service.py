@@ -12,6 +12,7 @@ from core.product.dto.product_create_dto import ProductCreateDTO
 from core.product.dto.product_update_dto import ProductUpdateDTO
 from core.product.dto.inventory_create_dto import InventoryCreateDTO
 from core.product.dto.inventory_update_dto import InventoryUpdateDTO
+from core.user.model.User import User
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,38 @@ class ProductService:
 
     def __init__(self, db: Session):
         self.db = db
+
+    def _normalize_phone_like(self, value: str) -> str:
+        cleaned = "".join(ch for ch in (value or "") if ch.isdigit())
+        if cleaned.startswith("233") and len(cleaned) > 3:
+            cleaned = "0" + cleaned[3:]
+        elif cleaned and not cleaned.startswith("0") and len(cleaned) == 9:
+            cleaned = "0" + cleaned
+        return cleaned
+
+    def _resolve_user_db_id(self, user_identifier: str) -> Optional[str]:
+        """Resolve db id, email, or phone to users.id."""
+        if not user_identifier:
+            return None
+
+        user = self.db.query(User).filter(User.id == user_identifier).first()
+        if user:
+            return user.id
+
+        user = self.db.query(User).filter(User.email == user_identifier).first()
+        if user:
+            return user.id
+
+        normalized_phone = self._normalize_phone_like(user_identifier)
+        phone_candidates = {user_identifier}
+        if normalized_phone:
+            phone_candidates.add(normalized_phone)
+
+        user = self.db.query(User).filter(User.phone.in_(list(phone_candidates))).first()
+        if user:
+            return user.id
+
+        return None
 
     @staticmethod
     def generate_inventory_id(product_name: str) -> str:
@@ -47,7 +80,9 @@ class ProductService:
 
     # ==================== PRODUCT METHODS ====================
 
-    def create_product(self, product_data: ProductCreateDTO) -> Tuple[bool, Optional[Product], str]:
+    def create_product(
+        self, product_data: ProductCreateDTO, user_id: Optional[str] = None
+    ) -> Tuple[bool, Optional[Product], str]:
         """
         Create a new product and automatically create an associated inventory record.
         If a product with the exact same name exists, returns the existing product.
@@ -61,8 +96,13 @@ class ProductService:
         try:
             logger.info(f"[PRODUCT_SERVICE] Creating product: {product_data.name}")
 
-            # Check if product with exact name already exists
-            existing_by_name = self.db.query(Product).filter(Product.name == product_data.name).first()
+            resolved_user_id = self._resolve_user_db_id(user_id) if user_id else None
+
+            # Check if product with exact name already exists for this user
+            name_query = self.db.query(Product).filter(Product.name == product_data.name)
+            if resolved_user_id:
+                name_query = name_query.filter(Product.user_id == resolved_user_id)
+            existing_by_name = name_query.first()
             if existing_by_name:
                 logger.info(f"[PRODUCT_SERVICE] Product with name '{product_data.name}' already exists, returning existing product")
                 return True, existing_by_name, f"Product '{product_data.name}' already exists. Returning existing product."
@@ -78,6 +118,7 @@ class ProductService:
             # Create product
             product = Product(
                 inventory_id=inventory_id,
+                user_id=resolved_user_id,
                 photo=product_data.photo,
                 name=product_data.name,
                 description=product_data.description,
@@ -169,6 +210,37 @@ class ProductService:
             return products
         except Exception as e:
             logger.error(f"[PRODUCT_SERVICE] Error fetching products: {str(e)}", exc_info=True)
+            return []
+
+    def get_products_by_user(
+        self,
+        user_id: str,
+        skip: int = 0,
+        limit: int = 100,
+        category: Optional[str] = None,
+    ) -> List[Product]:
+        """Get products owned by a user (accepts users.id, email, or phone)."""
+        try:
+            resolved_user_id = self._resolve_user_db_id(user_id)
+            if not resolved_user_id:
+                logger.info(f"[PRODUCT_SERVICE] No user found for identifier: {user_id}")
+                return []
+
+            query = self.db.query(Product).filter(Product.user_id == resolved_user_id)
+            if category:
+                query = query.filter(Product.category == category)
+
+            products = (
+                query.order_by(desc(Product.created_at)).offset(skip).limit(limit).all()
+            )
+            logger.info(
+                f"[PRODUCT_SERVICE] Found {len(products)} products for user {resolved_user_id}"
+            )
+            return products
+        except Exception as e:
+            logger.error(
+                f"[PRODUCT_SERVICE] Error fetching products for user: {str(e)}", exc_info=True
+            )
             return []
 
     def update_product(self, product_id: str, update_data: ProductUpdateDTO) -> Tuple[bool, Optional[Product], str]:

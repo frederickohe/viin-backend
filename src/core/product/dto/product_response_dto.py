@@ -10,6 +10,7 @@ class ProductResponseDTO(BaseModel):
     # Primary Identifiers
     product_id: str
     inventory_id: str
+    user_id: Optional[str] = None
     
     # Product Details
     photo: str
@@ -54,6 +55,7 @@ class ProductResponseDTO(BaseModel):
         return cls(
             product_id=str(product.product_id),
             inventory_id=product.inventory_id,
+            user_id=getattr(product, "user_id", None),
             photo=product.photo,
             name=product.name,
             description=product.description,
