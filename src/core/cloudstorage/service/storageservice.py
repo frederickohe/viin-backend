@@ -216,7 +216,7 @@ class StorageService:
     ) -> list[dict]:
         """List objects under a given folder + prefix.
 
-        Returns a list of dicts: { "key": str, "url": str }.
+        Returns a list of dicts: { "key": str, "url": str, "last_modified": datetime | None }.
         """
         subfolder = self.resolve_subfolder(folder=folder, subfolder=subfolder)
         full_prefix = f"{subfolder}{prefix}"
@@ -244,7 +244,13 @@ class StorageService:
                     Params={"Bucket": self.bucket, "Key": key},
                     ExpiresIn=31536000,
                 )
-                results.append({"key": key, "url": url})
+                results.append(
+                    {
+                        "key": key,
+                        "url": url,
+                        "last_modified": obj.get("LastModified"),
+                    }
+                )
 
             if resp.get("IsTruncated"):
                 continuation_token = resp.get("NextContinuationToken")

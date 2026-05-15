@@ -1462,7 +1462,9 @@ class AutobusNLUSystem:
                 agent_name="email_agent",
                 user_data=user_data
             )
-            return IntentHandlerResult(msg, 200 if (msg or "").strip().startswith("✅") else None)
+            m = (msg or "").strip()
+            http = 200 if m.startswith(("✅", "📧")) else None
+            return IntentHandlerResult(msg, http)
         elif intent in product_management_intents:
             # Route product management intents
             msg = self.intent_processor.process_product_management_intent(

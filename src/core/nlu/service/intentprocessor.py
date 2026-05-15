@@ -435,11 +435,28 @@ class IntentProcessor:
         return result
 
     def _handle_read_emails(self, user_id: str, slots: Dict[str, Any]) -> str:
-        """Handle read_emails intent"""
-        num_emails = slots.get("num_emails", 10)
-        
-        # TODO: Implement email reading functionality when email API is available
-        return f"📧 Email reading feature coming soon. Retrieving up to {num_emails} emails..."
+        """List emails this user sent via EmailTool (stored when send succeeds)."""
+        raw_n = slots.get("num_emails", 10)
+        try:
+            limit = int(float(raw_n))
+        except (TypeError, ValueError):
+            limit = 10
+        limit = max(1, min(50, limit))
+
+        rows = self.email_tool.list_sent_emails_for_user(user_id, limit=limit)
+        if not rows:
+            return (
+                "📧 No sent emails on record yet. After you send mail through Autobus, "
+                f"your last up to {limit} messages will appear here."
+            )
+
+        lines: List[str] = []
+        for i, row in enumerate(rows, start=1):
+            to_addr = row.get("to", "?")
+            subj = row.get("subject", "(no subject)")
+            sent = row.get("sent_at", "")
+            lines.append(f"{i}. To: {to_addr} — {subj}\n   Sent: {sent}")
+        return "📧 Your recent sent emails:\n" + "\n".join(lines)
 
     # ===== PRODUCT MANAGEMENT INTENT HANDLER =====
     def process_product_management_intent(

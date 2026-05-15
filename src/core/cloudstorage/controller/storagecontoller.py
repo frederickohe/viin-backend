@@ -1,7 +1,7 @@
 import io
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status, Query, File
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from pydantic import BaseModel
 from core.auth.service.sessiondriver import SessionDriver, TokenData
@@ -63,7 +63,12 @@ async def upload_file(
         content_type=file.content_type,
         folder=folder,
     )
-    return FileDTO(file_name=safe_name, file_url=url, folder=folder.value if folder else None)
+    return FileDTO(
+        file_name=safe_name,
+        file_url=url,
+        folder=folder.value if folder else None,
+        uploaded_at=datetime.now(timezone.utc),
+    )
 
 
 @storage_routes.post("/me/upload-rag-document", response_model=FileUploadRagResponse)
@@ -125,6 +130,7 @@ async def upload_rag_document_for_subscribed_user(
         file_url=url,
         folder=folder.value,
         object_key=object_key,
+        uploaded_at=datetime.now(timezone.utc),
         rag_indexed_chunks=n_chunks,
         rag_detail=rag_detail,
     )
@@ -156,6 +162,7 @@ async def upload_multiple_files_for_me(
                 file_url=url,
                 folder=folder.value,
                 object_key=object_key,
+                uploaded_at=datetime.now(timezone.utc),
             )
         )
 
@@ -177,6 +184,7 @@ async def list_my_files_in_folder(
             file_url=o["url"],
             folder=folder.value,
             object_key=o["key"],
+            uploaded_at=o.get("last_modified"),
         )
         for o in objects
     ]

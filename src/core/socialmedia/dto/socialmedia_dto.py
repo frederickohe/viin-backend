@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
@@ -305,3 +305,33 @@ class BlotatoMediaUploadResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# --- Digital marketing (Postiz) archived payloads ---
+
+
+class DigitalMarketingAssetResponse(BaseModel):
+    """Marketing text + media URLs saved after a successful Postiz post (list view)."""
+
+    id: str
+    agent_name: str
+    marketing_text: Optional[str] = None
+    content_links: List[str] = Field(default_factory=list)
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class DigitalMarketingAssetDetailResponse(DigitalMarketingAssetResponse):
+    """Same as list row plus Postiz API response snapshot."""
+
+    postiz_response: Optional[Dict[str, Any]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class DigitalMarketingAssetListResponse(BaseModel):
+    items: List[DigitalMarketingAssetResponse]
+    total: int

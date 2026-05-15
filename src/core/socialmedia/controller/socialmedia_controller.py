@@ -4,19 +4,24 @@ API routes for social media account management and posting
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
 from typing import Any, Dict
 import uuid
 
+from fastapi.responses import JSONResponse
+
 from another_fastapi_jwt_auth import AuthJWT
 from core.socialmedia.dto.socialmedia_dto import (
     SocialAccountResponse, SocialAccountsListResponse, DisconnectAccountRequest,
     PublishPostRequest, PublishPostResponse, RefreshAccountsRequest,
     RefreshAccountsResponse, OAuth2CallbackRequest, ErrorResponse,
-    SocialPlatformEnum
+    SocialPlatformEnum,
+    DigitalMarketingAssetListResponse,
+    DigitalMarketingAssetResponse,
+    DigitalMarketingAssetDetailResponse,
 )
 from core.socialmedia.service.socialmedia_service import SocialMediaService
 from core.socialmedia.service.post_publishing_service import PostPublishingService
@@ -24,6 +29,11 @@ from core.socialmedia.service.blotato_api_service import (
     BlotatoAPIClient, BlotatoOAuthManager
 )
 from core.socialmedia.service.postiz_api_service import PostizClient, PostizAPIError, derive_postiz_password
+from core.socialmedia.service.postiz_marketing_extract import (
+    extract_marketing_text_and_links,
+    normalize_digital_marketing_agent_name,
+)
+from core.socialmedia.service.digital_marketing_asset_service import DigitalMarketingAssetService
 from core.socialmedia.service.postiz_org_service import PostizOrgService
 from core.socialmedia.model.PostizOrganization import PostizOrganization
 from core.user.model.User import User
@@ -633,19 +643,29 @@ async def postiz_auto_login(
 @social_routes.post("/postiz/posts")
 async def postiz_create_post(
     payload: Dict[str, Any],
-    user_id: str = Depends(validate_token),
+    agent_name: Optional[str] = Query(
+        None,
+        description=(
+            "When set to digital_marketing (aliases: digital_margeting, digital-marketing), "
+            "marketing text and media URLs from the request body are stored after Postiz accepts the post."
+        ),
+    ),
+    jwt_subject: str = Depends(validate_token),
     db: Session = Depends(get_db),
 ):
     """
     Create/schedule a post in Postiz using the raw Postiz Public API payload.
 
     The payload is passed through to `POST /api/public/v1/posts` on your Postiz instance.
+
+    For the digital marketing agent, pass `?agent_name=digital_marketing` so caption and media
+    links are archived for later download via `/digital-marketing/assets`.
     """
     postiz_base_url = os.getenv("POSTIZ_BASE_URL", "").strip()
     if not postiz_base_url:
         raise HTTPException(status_code=400, detail="POSTIZ_BASE_URL not configured")
 
-    api_key = _resolve_postiz_api_key(user_id, db)
+    api_key = _resolve_postiz_api_key(jwt_subject, db)
     if not api_key:
         raise HTTPException(
             status_code=404,
@@ -654,6 +674,101 @@ async def postiz_create_post(
 
     try:
         client = PostizClient(postiz_base_url)
-        return await client.create_post(api_key, payload)
+        result = await client.create_post(api_key, payload)
     except PostizAPIError as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+    canonical_agent = normalize_digital_marketing_agent_name(agent_name)
+    if canonical_agent:
+        try:
+            user = db.query(User).filter(User.email == jwt_subject).first()
+            if user:
+                text, links = extract_marketing_text_and_links(payload)
+                DigitalMarketingAssetService(db).create_from_postiz(
+                    user_internal_id=str(user.id),
+                    agent_name=canonical_agent,
+                    marketing_text=text,
+                    content_links=links,
+                    postiz_response=result if isinstance(result, dict) else {"value": result},
+                )
+        except Exception as arch_exc:
+            logger.warning(
+                "[DIGITAL_MARKETING] Failed to archive Postiz marketing payload: %s",
+                arch_exc,
+                exc_info=True,
+            )
+
+    return result
+
+
+@social_routes.get(
+    "/digital-marketing/assets",
+    response_model=DigitalMarketingAssetListResponse,
+)
+async def list_digital_marketing_assets(
+    jwt_subject: str = Depends(validate_token),
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    user = db.query(User).filter(User.email == jwt_subject).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    svc = DigitalMarketingAssetService(db)
+    rows = svc.list_for_user(str(user.id), limit=limit, offset=offset)
+    total = svc.count_for_user(str(user.id))
+    items = [DigitalMarketingAssetResponse.model_validate(r) for r in rows]
+    return DigitalMarketingAssetListResponse(items=items, total=total)
+
+
+@social_routes.get(
+    "/digital-marketing/assets/{asset_id}",
+    response_model=DigitalMarketingAssetDetailResponse,
+)
+async def get_digital_marketing_asset(
+    asset_id: str,
+    jwt_subject: str = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.email == jwt_subject).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    row = DigitalMarketingAssetService(db).get_for_user(str(user.id), asset_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return DigitalMarketingAssetDetailResponse.model_validate(row)
+
+
+@social_routes.get("/digital-marketing/assets/{asset_id}/download")
+async def download_digital_marketing_asset(
+    asset_id: str,
+    jwt_subject: str = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.email == jwt_subject).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    row = DigitalMarketingAssetService(db).get_for_user(str(user.id), asset_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    body: Dict[str, Any] = {
+        "id": row.id,
+        "agent_name": row.agent_name,
+        "marketing_text": row.marketing_text,
+        "content_links": row.content_links or [],
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "postiz_response": row.postiz_response,
+    }
+    safe_name = asset_id.replace("/", "_").replace("\\", "_")[:80]
+    return JSONResponse(
+        content=body,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="digital-marketing-{safe_name}.json"'
+            )
+        },
+    )

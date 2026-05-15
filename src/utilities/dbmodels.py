@@ -33,6 +33,7 @@ _model_modules = [
 	"core.paystack.model.transaction",
 	"core.socialmedia.model.SocialAccount",
 	"core.socialmedia.model.PostizOrganization",
+	"core.socialmedia.model.DigitalMarketingPostAsset",
 	"core.chatwoot.model.ChatwootAccount",
 	"core.product.model.product",
 	"core.orders.model.order",

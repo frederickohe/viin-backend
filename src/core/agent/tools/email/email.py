@@ -6,7 +6,7 @@ from email.message import EmailMessage
 import redis
 import json
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 from pathlib import Path
 import logging
@@ -102,6 +102,42 @@ class EmailTool(BaseTool):
         
         return tracking_id
 
+    def _record_user_sent_email(self, user_id: str, *, to_email: str, subject: str) -> None:
+        """Append outbound message metadata for read_emails / sent history (newest first)."""
+        try:
+            payload = json.dumps(
+                {
+                    "to": to_email,
+                    "subject": subject,
+                    "sent_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            key = f"email:sent:{user_id}"
+            self.redis_client.lpush(key, payload)
+            self.redis_client.ltrim(key, 0, 99)
+        except Exception as e:
+            logger.warning("Could not record sent email for user %s: %s", user_id, e)
+
+    def list_sent_emails_for_user(self, user_id: str, limit: int = 10) -> list[Dict[str, Any]]:
+        """Return recent emails sent by this user through EmailTool (Redis-backed)."""
+        if limit < 1:
+            limit = 1
+        if limit > 50:
+            limit = 50
+        key = f"email:sent:{user_id}"
+        try:
+            raw = self.redis_client.lrange(key, 0, limit - 1)
+        except Exception as e:
+            logger.error("Redis error listing sent emails for %s: %s", user_id, e)
+            return []
+        out: list[Dict[str, Any]] = []
+        for row in raw or []:
+            try:
+                out.append(json.loads(row))
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return out
+
     def _send_via_zeptomail(self, sender_email: str, to_email: str, subject: str, body: str) -> bool:
         """Send via Zoho Zeptomail SMTP."""
         port = int(os.getenv('ZEPTOMAIL_SMTP_PORT', 587))
@@ -192,6 +228,7 @@ class EmailTool(BaseTool):
 
             # 4. Return appropriate response
             if success:
+                self._record_user_sent_email(user_id, to_email=to_email, subject=subject)
                 return f"✅ Email sent successfully to {to_email}"
             else:
                 return f"❌ Failed to send email. Please check your configuration."
