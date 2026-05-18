@@ -77,11 +77,6 @@ class AutobusNLUSystem:
         self._conversation_rag = ConversationVectorClient()
 
     @staticmethod
-    def _rag_conversations_enabled() -> bool:
-        v = (os.getenv("RAG_CONVERSATIONS_ENABLED") or "").strip().lower()
-        return v in ("1", "true", "yes", "on")
-
-    @staticmethod
     def _is_declining_more_help(text: str) -> bool:
         t = (text or "").lower().strip()
         if not t:
@@ -1298,97 +1293,13 @@ class AutobusNLUSystem:
         user_data = self._get_user_data(user_id)
         
         if intent in conversational_intents:
-            rag_first = self._rag_conversations_enabled()
-            if rag_first and self._conversation_rag.enabled():
-                internal_user_id = (user_data or {}).get("db_user_id")
-                if not internal_user_id:
-                    try:
-                        db = SessionLocal()
-                        user_service = UserService(db)
-                        user = user_service.get_user_by_phone(user_id)
-                        internal_user_id = str(user.id) if user else user_id
-                        db.close()
-                    except Exception as e:
-                        logger.warning(f"Could not fetch internal user ID for {user_id}: {e}")
-                        internal_user_id = user_id
-
-                tenant_id = resolve_effective_rag_tenant_id(
-                    user_data,
-                    fallback_db_user_id=str(internal_user_id) if internal_user_id is not None else None,
-                )
-                rag_context = None
-                if tenant_id:
-                    try:
-                        hits = self._conversation_rag.search(
-                            tenant_id=tenant_id,
-                            query=user_message,
-                            limit=12,
-                        )
-                        rag_context = self._conversation_rag.format_context(hits)
-                    except Exception as e:
-                        logger.warning(f"[RAG] search failed for {user_id}: {e}", exc_info=True)
-
-                msg = self.intent_processor.process_conversational_intent(
-                    intent,
-                    user_message,
-                    conversation_history,
-                    slots,
-                    user_id=internal_user_id,
-                    user_data=user_data,
-                    rag_context=rag_context,
-                )
-
-                if tenant_id:
-                    try:
-                        meta: Dict[str, Any] = {"user_phone": user_id}
-                        if internal_user_id:
-                            meta["db_user_id"] = str(internal_user_id)
-                        self._conversation_rag.upsert_turns(
-                            tenant_id=tenant_id,
-                            points=[
-                                {"text": user_message, "role": "user", "metadata": meta},
-                                {"text": msg, "role": "assistant", "metadata": meta},
-                            ],
-                        )
-                    except Exception as e:
-                        logger.warning(f"[RAG] upsert failed for {user_id}: {e}", exc_info=True)
-
-                return IntentHandlerResult(msg, None)
-
-            # Route conversational traffic to Chatwoot if the user has a provisioned tenant.
-            try:
-                routed = self._route_conversational_intent_to_chatwoot(
-                    user_id=user_id,
-                    user_message=user_message,
-                    user_data=user_data,
-                )
-                if routed is not None:
-                    return IntentHandlerResult(routed, None)
-            except Exception as e:
-                logger.warning(f"[CHATWOOT] Conversational routing failed for {user_id}: {e}", exc_info=True)
-
-            # Fallback: internal LLM-based conversation
-            internal_user_id = user_data.get("db_user_id") if user_data else None
-            if not internal_user_id:
-                # Fallback: fetch user to get internal ID
-                try:
-                    db = SessionLocal()
-                    user_service = UserService(db)
-                    user = user_service.get_user_by_phone(user_id)
-                    internal_user_id = str(user.id) if user else user_id
-                    db.close()
-                except Exception as e:
-                    logger.warning(f"Could not fetch internal user ID for {user_id}: {e}")
-                    internal_user_id = user_id
-
-            msg = self.intent_processor.process_conversational_intent(
-                intent,
-                user_message,
-                conversation_history,
-                slots,
-                user_id=internal_user_id,
+            msg = self._process_conversational_with_rag(
+                user_id=user_id,
+                intent=intent,
+                user_message=user_message,
+                conversation_history=conversation_history,
+                slots=slots,
                 user_data=user_data,
-                rag_context=None,
             )
             return IntentHandlerResult(msg, None)
         elif intent in financial_tips_intents:
@@ -1505,6 +1416,83 @@ class AutobusNLUSystem:
                 self.response_formatter.format_response(intent, "error", message="Intent not supported"),
                 None,
             )
+
+    def _resolve_internal_user_id(
+        self, user_id: str, user_data: Optional[Dict[str, Any]]
+    ) -> str:
+        internal_user_id = (user_data or {}).get("db_user_id")
+        if internal_user_id:
+            return str(internal_user_id)
+        try:
+            db = SessionLocal()
+            user_service = UserService(db)
+            user = user_service.get_user_by_phone(user_id)
+            internal_user_id = str(user.id) if user else user_id
+            db.close()
+            return internal_user_id
+        except Exception as e:
+            logger.warning(f"Could not fetch internal user ID for {user_id}: {e}")
+            return user_id
+
+    def _process_conversational_with_rag(
+        self,
+        *,
+        user_id: str,
+        intent: str,
+        user_message: str,
+        conversation_history: List[Dict],
+        slots: Dict,
+        user_data: Optional[Dict[str, Any]],
+    ) -> str:
+        """Answer conversational intents via Qdrant retrieval + tenant-scoped LLM."""
+        internal_user_id = self._resolve_internal_user_id(user_id, user_data)
+        tenant_id = resolve_effective_rag_tenant_id(
+            user_data,
+            fallback_db_user_id=internal_user_id,
+        )
+
+        rag_context = None
+        if not self._conversation_rag.enabled():
+            logger.warning(
+                "[RAG] RAG_SERVICE_URL not configured; conversational reply will lack indexed context"
+            )
+        elif not tenant_id:
+            logger.warning("[RAG] No tenant_id for user %s; skipping vector search", user_id)
+        else:
+            try:
+                hits = self._conversation_rag.search(
+                    tenant_id=tenant_id,
+                    query=user_message,
+                    limit=12,
+                )
+                rag_context = self._conversation_rag.format_context(hits)
+            except Exception as e:
+                logger.warning(f"[RAG] search failed for {user_id}: {e}", exc_info=True)
+
+        msg = self.intent_processor.process_conversational_intent(
+            intent,
+            user_message,
+            conversation_history,
+            slots,
+            user_id=internal_user_id,
+            user_data=user_data,
+            rag_context=rag_context,
+        )
+
+        if tenant_id and self._conversation_rag.enabled():
+            try:
+                meta: Dict[str, Any] = {"user_phone": user_id, "db_user_id": str(internal_user_id)}
+                self._conversation_rag.upsert_turns(
+                    tenant_id=tenant_id,
+                    points=[
+                        {"text": user_message, "role": "user", "metadata": meta},
+                        {"text": msg, "role": "assistant", "metadata": meta},
+                    ],
+                )
+            except Exception as e:
+                logger.warning(f"[RAG] upsert failed for {user_id}: {e}", exc_info=True)
+
+        return msg
 
     def _route_conversational_intent_to_chatwoot(
         self,
@@ -1819,6 +1807,7 @@ class AutobusNLUSystem:
                     "email": user.email,
                     "fullname": user.fullname,
                     "company": user.company,
+                    "organization_workplace": user.organization_workplace,
                     "created_at": user.created_at.isoformat() if user.created_at else None,
                     # Add any additional user fields you need
                 }

@@ -175,7 +175,7 @@ services:
       # `http://host.docker.internal:8088` if the RAG API port is published.
       RAG_SERVICE_URL: ${RAG_SERVICE_URL:-}
       RAG_SERVICE_API_KEY: ${RAG_SERVICE_API_KEY:-}
-      RAG_CONVERSATIONS_ENABLED: ${RAG_CONVERSATIONS_ENABLED:-}
+      # Conversational chat always uses RAG when RAG_SERVICE_URL is set (see nlu.py).
       RAG_TENANT_MODE: ${RAG_TENANT_MODE:-company_then_user}
       RAG_USE_INTERNAL_USER_TENANT: ${RAG_USE_INTERNAL_USER_TENANT:-true}
 

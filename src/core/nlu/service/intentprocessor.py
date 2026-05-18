@@ -14,7 +14,7 @@ from core.billing.service.order_invoice_service import OrderInvoiceService
 from core.orders.dto.order_create_dto import OrderCreateDTO
 from core.orders.dto.order_update_dto import OrderUpdateDTO
 from core.nlu.service.llmclient import LLMClient
-from core.nlu.config import SYSTEM_PROMPTS, RESPONSE_TEMPLATES
+from core.nlu.config import SYSTEM_PROMPTS, RESPONSE_TEMPLATES, VENDOR_EXCLUSION_RULES
 from core.nlu.service.slot_manager import is_placeholder_order_item_name
 from core.nlu.service.datapipe.dataconfig import FINANCIAL_INSIGHTS_SYSTEM_PROMPT, INSIGHTS_SYSTEM_PROMPT
 from core.nlu.service.datapipe.user_rag import UserRAGManager
@@ -85,8 +85,16 @@ class IntentProcessor:
         if rag_context and rag_context.strip():
             system_prompt = (
                 system_prompt
-                + "\n\n## Retrieved memory (same tenant; use only if relevant)\n"
+                + "\n\n## Retrieved memory (same tenant — primary source for company/business facts)\n"
                 + rag_context.strip()
+            )
+        else:
+            system_prompt = (
+                system_prompt
+                + "\n\n## Retrieved memory\n"
+                + "No relevant indexed documents were retrieved for this question. "
+                + "Do not invent company or product facts. "
+                + "If the user asks about their business, say you need more information in their knowledge base."
             )
         
         response = self.llm_client.chat_completion(
@@ -278,9 +286,19 @@ class IntentProcessor:
         """
         Build enhanced system prompt with user context RAG
         """
-        # Add user context if available
+        conversational_intents = {
+            "greeting",
+            "normal_conversation",
+            "business_conversation",
+            "small_talk",
+            "goodbye",
+        }
+
+        # Organization profile for chat (tenant-scoped, not platform vendor).
         user_context_section = ""
-        if user_data and intent == "expense_report":
+        if user_data and intent in conversational_intents:
+            user_context_section = self._format_organization_context(user_data)
+        elif user_data and intent == "expense_report":
             # user_data produced by NLU uses the key 'user_id' (not 'id')
             # Ensure we pass a string user_id to the RAG manager so it matches
             # the History.user_id column (which is stored as string).
@@ -310,14 +328,36 @@ class IntentProcessor:
             )
             user_context_section = f"User Transaction Data:\n{json.dumps(user_financial_context, indent=2)}"
             print(f"[ENHANCED_SYSTEM_PROMPT] User Transaction Data for {user_name}:\n{json.dumps(user_financial_context, indent=2)}")
-        # Build the enhanced prompt
-        enhanced_prompt = base_prompt.format(
-            context=user_context_section,
-            missing_slots="",
-            category=slots.get('category', 'general')
-        )
-             
+        format_kwargs: Dict[str, Any] = {
+            "context": user_context_section or "No organization profile on file.",
+            "missing_slots": "",
+            "category": slots.get("category", "general"),
+        }
+        if "{vendor_rules}" in base_prompt:
+            format_kwargs["vendor_rules"] = VENDOR_EXCLUSION_RULES.strip()
+
+        enhanced_prompt = base_prompt.format(**format_kwargs)
+
         return enhanced_prompt
+
+    @staticmethod
+    def _format_organization_context(user_data: Dict[str, Any]) -> str:
+        company = (user_data.get("company") or "").strip()
+        workplace = (user_data.get("organization_workplace") or "").strip()
+        fullname = (user_data.get("fullname") or "").strip()
+        email = (user_data.get("email") or "").strip()
+        lines = []
+        if company:
+            lines.append(f"Business name: {company}")
+        if workplace:
+            lines.append(f"Organization / workplace: {workplace}")
+        if fullname:
+            lines.append(f"Account holder: {fullname}")
+        if email:
+            lines.append(f"Contact email: {email}")
+        if not lines:
+            return "No organization profile on file."
+        return "\n".join(lines)
 
     @staticmethod
     def _greeting_display_name(user_data: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -458,7 +498,7 @@ class IntentProcessor:
         rows = self.email_tool.list_sent_emails_for_user(user_id, limit=limit)
         if not rows:
             return (
-                "📧 No sent emails on record yet. After you send mail through Autobus, "
+                "📧 No sent emails on record yet. After you send mail through this assistant, "
                 f"your last up to {limit} messages will appear here."
             )
 

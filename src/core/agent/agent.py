@@ -60,7 +60,7 @@ class AutoBus:
         self.db_session = db_session
         
         # Create system prompt for manager agent
-        manager_system_prompt = """You are AutoBus, a sophisticated multi-agent orchestrator.
+        manager_system_prompt = """You are a business operations orchestrator for the customer's organization.
 
 You coordinate multiple specialized sub-agents to help users with various tasks:
 - config_agent: Manages agent configurations
@@ -119,26 +119,17 @@ Always provide clear, helpful responses."""
             The agent's response.
         """
         try:
-            
-            # Add user message to history
-            logger.info("Received message from %s: %s", userid, (message or '')[:200])
-            
-            complete_message = f"User ID: {userid}, agent_name: {agent_name}\n\nCurrent Message: {message}"
-            
-            # Process message through manager agent
-            response = self.executor.invoke({"input": complete_message})
-            
-            # Extract output from response
-            if isinstance(response, dict):
-                result = response.get("output", str(response))
-            else:
-                result = str(response)
-    
-            return result
-            
+            logger.info("Received message from %s: %s", userid, (message or "")[:200])
+
+            # Route chat through NLU + RAG (tenant-scoped) instead of a generic orchestrator prompt.
+            from core.nlu.nlu import AutobusNLUSystem
+
+            nlu = AutobusNLUSystem(db_session=self.db_session)
+            return nlu.process_message(userid, message)
+
         except Exception as e:
-            logger.error(f"Error processing message with Autobus for user {userid}: {e}", exc_info=True)
-            return f"Error processing message with Autobus: {e}"
+            logger.error(f"Error processing message for user {userid}: {e}", exc_info=True)
+            return "Sorry, I could not process your message. Please try again."
     
     def _format_conversation_context(self, conversation_history: list) -> str:
         """Format conversation history for inclusion in the prompt.
