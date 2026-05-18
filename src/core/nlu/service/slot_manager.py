@@ -145,6 +145,8 @@ class SlotManager:
             "time_period": "For what time period?",
             "customer_name": "What is the name of the customer (from your saved contacts)?",
             "item_name": "What product or item is being ordered?",
+            "order_number": "Which order number should I invoice (e.g. ORD-20260318-12345)?",
+            "order_id": "Which order ID should I invoice?",
             "product_name": "What is the product name?",
             "product_id": "Which product (ID or name)?",
             "price": "What is the price?",

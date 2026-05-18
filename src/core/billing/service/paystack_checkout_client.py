@@ -56,6 +56,59 @@ class PaystackCheckoutClient:
             return int(round(amount_major))
         return int(round(amount_major * 100))
 
+    def initialize_checkout_sync(
+        self,
+        email: str,
+        amount_subunit: int,
+        reference: Optional[str] = None,
+        callback_url: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> PaystackCheckoutResult:
+        ref = reference or self.generate_reference()
+        payload: dict[str, Any] = {
+            "email": email,
+            "amount": amount_subunit,
+            "reference": ref,
+            "metadata": metadata or {},
+        }
+
+        resolved_callback = callback_url or self.default_callback_url
+        if resolved_callback:
+            payload["callback_url"] = resolved_callback
+
+        try:
+            with httpx.Client() as client:
+                response = client.post(
+                    f"{self.base_url}/transaction/initialize",
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+                result = response.json()
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Paystack API error: {exc.response.text}",
+            ) from exc
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Paystack service unavailable: {exc}",
+            ) from exc
+
+        if not result.get("status"):
+            raise BillingValidationException(
+                result.get("message", "Failed to initialize Paystack checkout")
+            )
+
+        data = result["data"]
+        return PaystackCheckoutResult(
+            reference=ref,
+            authorization_url=data["authorization_url"],
+            access_code=data["access_code"],
+        )
+
     async def initialize_checkout(
         self,
         email: str,

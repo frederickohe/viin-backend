@@ -145,6 +145,12 @@ INTENTS = {
         "required_slots": ["order_id"],
         "category": "order_management"
     },
+    "send_order_invoice": {
+        "description": "Generate a Paystack payment link for an order and send the invoice to the customer's chat",
+        "slots": ["order_id", "order_number", "customer_email"],
+        "required_slots": [],
+        "category": "order_management"
+    },
     #==== FINANCIAL TIPS AGENT INTENTS =====
     "financial_tips": {
         "description": "Provide general financial advice and tips",
@@ -369,6 +375,7 @@ RESPONSE_TEMPLATES = {
     "order_management": {
         "create_order": "✅ Order created successfully!\nCustomer: {customer_name}\nItem: {item_name}\nQuantity: {quantity}\nOrder ID: {order_id}",
         "update_order": "✅ Order (ID: {order_id}) has been updated successfully.",
+        "send_order_invoice": "✅ Invoice with Paystack payment link sent for order {order_number}.",
         "missing_slots": "I'd be happy to help with order management. Please provide: {missing_slots}",
         "error": "I apologize, but I encountered an error processing your order. Please try again."
     },
@@ -419,7 +426,7 @@ INTENT_CATEGORIES = {
     "image_generation": ["generate_image"],
     "video_generation": ["generate_video"],
     "product_management": ["add_product", "update_product", "delete_product", "view_products", "view_product"],
-    "order_management": ["create_order", "update_order"],
+    "order_management": ["create_order", "update_order", "send_order_invoice"],
     "financial_tips": ["financial_tips", "budgeting_advice", "savings_tips", "investment_advice", "debt_management"],
     "transactional": ["send_money", "buy_airtime", "pay_bill", "check_balance", "get_loan", "track_expenses", "set_budget"],
     "expense_report": ["expense_report", "generate_expense_report", "monthly_expense_summary",  "annual_expense_report", "daily_expense_report","transaction_info"],

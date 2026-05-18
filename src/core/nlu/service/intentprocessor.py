@@ -10,6 +10,7 @@ from core.product.dto.product_update_dto import ProductUpdateDTO
 from core.product.dto.product_response_dto import ProductResponseDTO
 from core.orders.order_messages import format_out_of_stock_notice
 from core.orders.service.order_service import OrderService
+from core.billing.service.order_invoice_service import OrderInvoiceService
 from core.orders.dto.order_create_dto import OrderCreateDTO
 from core.orders.dto.order_update_dto import OrderUpdateDTO
 from core.nlu.service.llmclient import LLMClient
@@ -762,12 +763,15 @@ class IntentProcessor:
         Supported intents:
         - create_order: Create a new order
         - update_order: Update order details
+        - send_order_invoice: Paystack invoice to customer chat
         """
         try:
             if intent == "create_order":
                 return self._handle_create_order(user_id, slots)
             elif intent == "update_order":
                 return self._handle_update_order(user_id, slots)
+            elif intent == "send_order_invoice":
+                return self._handle_send_order_invoice(user_id, slots, user_data)
             else:
                 return f"❌ Order management intent '{intent}' not supported"
         except Exception as e:
@@ -858,6 +862,36 @@ class IntentProcessor:
             response_lines.append("")
             response_lines.append(format_out_of_stock_notice(str(item_name)))
         return "\n".join(response_lines)
+
+    def _handle_send_order_invoice(
+        self,
+        user_id: str,
+        slots: Dict[str, Any],
+        user_data: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        order_id = slots.get("order_id")
+        order_number = slots.get("order_number")
+
+        if not order_id and not order_number:
+            return (
+                "❌ Please provide the order number (e.g. ORD-20260318-12345) "
+                "or order ID so I can send the invoice."
+            )
+
+        db = next(get_db())
+        invoice_service = OrderInvoiceService(db)
+        created_by = None
+        if user_data and user_data.get("db_user_id"):
+            created_by = str(user_data["db_user_id"])
+
+        success, message = invoice_service.send_invoice_for_order(
+            merchant_user_id=user_id,
+            order_id=str(order_id).strip() if order_id else None,
+            order_number=str(order_number).strip() if order_number else None,
+            customer_email=(slots.get("customer_email") or "").strip() or None,
+            created_by_user_id=created_by,
+        )
+        return message
 
     def _handle_update_order(self, user_id: str, slots: Dict[str, Any]) -> str:
         """Handle update_order intent"""

@@ -1494,7 +1494,7 @@ class AutobusNLUSystem:
                 conversation_history,
                 slots,
                 user_id=user_id,
-                user_data=user_data
+                user_data=user_data,
             )
             return IntentHandlerResult(msg, 200 if (msg or "").strip().startswith("✅") else None)
         elif intent in user_management_intents:

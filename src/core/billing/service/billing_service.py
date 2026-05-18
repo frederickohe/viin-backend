@@ -84,6 +84,54 @@ class BillingService:
         )
         return BillingResponse.from_charge(charge)
 
+    def create_billing_sync(
+        self,
+        request: BillingCreateRequest,
+        created_by_user_id: Optional[str] = None,
+    ) -> BillingResponse:
+        """Synchronous billing creation for NLU / non-async callers."""
+        amount = Decimal(str(request.amount))
+        if amount <= 0:
+            raise BillingValidationException("Amount must be greater than zero")
+
+        amount_subunit = self.paystack.to_subunit(float(amount), request.currency)
+        reference = self.paystack.generate_reference()
+
+        metadata = {
+            "billing_source_type": request.source_type.value,
+            "external_id": request.external_id,
+            **(request.metadata or {}),
+        }
+
+        checkout = self.paystack.initialize_checkout_sync(
+            email=request.customer_email,
+            amount_subunit=amount_subunit,
+            reference=reference,
+            callback_url=request.callback_url,
+            metadata=metadata,
+        )
+
+        charge = BillingCharge(
+            reference=checkout.reference,
+            external_id=request.external_id,
+            source_type=request.source_type,
+            customer_email=request.customer_email,
+            customer_name=request.customer_name,
+            description=request.description,
+            currency=request.currency.upper(),
+            amount=float(amount),
+            amount_subunit=amount_subunit,
+            status=BillingChargeStatus.PENDING,
+            payment_url=checkout.authorization_url,
+            access_code=checkout.access_code,
+            charge_metadata=metadata,
+            created_by_user_id=created_by_user_id,
+        )
+        self.db.add(charge)
+        self.db.commit()
+        self.db.refresh(charge)
+        return BillingResponse.from_charge(charge)
+
     def get_by_id(self, billing_id: int) -> BillingResponse:
         charge = self.db.query(BillingCharge).filter(BillingCharge.id == billing_id).first()
         if not charge:

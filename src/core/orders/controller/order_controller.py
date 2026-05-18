@@ -1,10 +1,12 @@
 """Order Controller"""
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import logging
 
 from core.orders.service.order_service import OrderService
+from core.billing.service.order_invoice_service import OrderInvoiceService
+from core.user.service.user_service import UserService
 from core.orders.dto.order_response_dto import OrderResponseDTO
 from core.orders.dto.order_create_dto import OrderCreateDTO
 from core.orders.dto.order_update_dto import OrderUpdateDTO
@@ -148,6 +150,37 @@ def get_order(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving order: {str(e)}"
+        )
+
+
+@order_routes.post("/{order_id}/send-invoice")
+def send_order_invoice(
+    order_id: str = Path(..., description="Order ID"),
+    customer_email: Optional[str] = Query(None, description="Override customer email for Paystack"),
+    db: Session = Depends(get_db),
+    authjwt: AuthJWT = Depends(validate_token),
+):
+    """Generate a Paystack payment link for the order and send it to the customer chat."""
+    try:
+        user_service = UserService(db)
+        user = user_service.get_current_user(authjwt.get_jwt_subject())
+        invoice_service = OrderInvoiceService(db)
+        success, message = invoice_service.send_invoice_for_order(
+            merchant_user_id=user.id,
+            order_id=order_id,
+            customer_email=customer_email,
+            created_by_user_id=user.id,
+        )
+        if not success:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        return {"success": True, "message": message}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ORDER_CONTROLLER] Error sending invoice: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error sending invoice: {str(e)}",
         )
 
 
