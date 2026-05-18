@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
 from fastapi import UploadFile
+from starlette.datastructures import Headers
 
 from core.cloudstorage.dto.filedto import FileUploadRagResponse
 from core.cloudstorage.service.file_content_extractor import FileContentExtractor
@@ -179,11 +180,19 @@ class RagIndexService:
         if on_progress:
             on_progress(RagIndexJobStatus.uploading, 20, "Uploading to storage")
 
+        object_metadata: Optional[Dict[str, str]] = None
+        if source_url:
+            object_metadata = {
+                "source-type": "website",
+                "source-url": source_url,
+            }
+
         url = self.storage_service.upload_file(
             io.BytesIO(raw),
             key_name,
             content_type=content_type or "text/plain",
             folder=folder,
+            metadata=object_metadata,
         )
         object_key = f"{self.storage_service.resolve_subfolder(folder=folder)}{key_name}"
 
@@ -192,8 +201,14 @@ class RagIndexService:
 
         extracted = extracted_override
         if extracted is None:
-            pseudo = UploadFile(filename=safe_name, file=io.BytesIO(raw))
-            pseudo.content_type = content_type
+            pseudo_headers = (
+                Headers({"content-type": content_type}) if content_type else None
+            )
+            pseudo = UploadFile(
+                filename=safe_name,
+                file=io.BytesIO(raw),
+                headers=pseudo_headers,
+            )
             extracted = FileContentExtractor.extract_content(pseudo, raw)
 
         if on_progress:
@@ -229,6 +244,8 @@ class RagIndexService:
             folder=folder.value,
             object_key=object_key,
             uploaded_at=datetime.now(timezone.utc),
+            source_type="website" if source_url else "document",
+            source_url=source_url,
             rag_indexed_chunks=n_chunks,
             rag_detail=rag_detail,
         )

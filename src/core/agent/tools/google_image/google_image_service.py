@@ -16,6 +16,12 @@ class GoogleImageGenerationError(RuntimeError):
     pass
 
 
+class GoogleImageTimeoutError(GoogleImageGenerationError):
+    """Raised when the Google image API does not respond in time."""
+
+    pass
+
+
 def _extract_first_mime_type(value: Any) -> str | None:
     if isinstance(value, dict):
         for key in ("inlineData", "inline_data"):
@@ -71,6 +77,7 @@ class GoogleImageService:
     - GOOGLE_API_KEY
     - NANA_BANANA_BASE_URL (default: https://generativelanguage.googleapis.com/v1beta)
     - NANA_BANANA_MODEL (e.g. gemini-3.1-flash-image-preview)
+    - NANA_BANANA_HTTP_READ_TIMEOUT (seconds, default 600; image generation often exceeds 120s)
 
     Auth:
     - query param `?key=GOOGLE_API_KEY` (default)
@@ -82,6 +89,7 @@ class GoogleImageService:
         self._base_url = os.environ.get("NANA_BANANA_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
         self._model = os.environ.get("NANA_BANANA_MODEL", "").strip()
         self._use_x_goog = os.environ.get("NANA_BANANA_USE_X_GOOG_API_KEY", "false").lower() == "true"
+        self._read_timeout = float(os.environ.get("NANA_BANANA_HTTP_READ_TIMEOUT", "600"))
         self.last_mime_type: str | None = None
 
         if not self._api_key:
@@ -115,8 +123,19 @@ class GoogleImageService:
         else:
             params["key"] = self._api_key
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(url, headers=headers, params=params, json=payload)
+        timeout = httpx.Timeout(
+            connect=30.0,
+            read=self._read_timeout,
+            write=120.0,
+            pool=30.0,
+        )
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(url, headers=headers, params=params, json=payload)
+        except httpx.TimeoutException as e:
+            raise GoogleImageTimeoutError(
+                "Google image API request timed out; try again or shorten the prompt."
+            ) from e
 
         if resp.status_code >= 400:
             raise GoogleImageGenerationError(f"Google image API error {resp.status_code}: {resp.text}")

@@ -12,6 +12,14 @@ class FileDTO(BaseModel):
         default=None,
         description="Last modified time from object storage (typically upload time).",
     )
+    source_type: Optional[str] = Field(
+        default=None,
+        description="RAG source kind, e.g. document or website.",
+    )
+    source_url: Optional[str] = Field(
+        default=None,
+        description="Original URL when source_type is website.",
+    )
 
 
 class FileUploadRagResponse(FileDTO):

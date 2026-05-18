@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from another_fastapi_jwt_auth import AuthJWT
 
 from core.user.controller.usercontroller import validate_token, get_db
+from core.conversationmanager.service.conversation_list_service import ConversationListService
 from core.interventions.service.intervention_service import InterventionService
 from core.nlu.service.conversation_manager import ConversationManager
 
@@ -111,6 +112,10 @@ def get_daily_conversation(
 @intervention_routes.post("/human-message")
 def send_human_message(
     message: str = Query(..., min_length=1),
+    session_id: Optional[int] = Query(
+        None,
+        description="Daily conversation session id; when set, message is stored on that session.",
+    ),
     db: Session = Depends(get_db),
     authjwt: AuthJWT = Depends(validate_token),
 ):
@@ -119,6 +124,23 @@ def send_human_message(
     Delivery to external channels (WhatsApp/Chatwoot) can be performed by the calling app.
     """
     user_id = authjwt.get_jwt_subject()
+
+    if session_id is not None:
+        service = ConversationListService(db)
+        detail = service.append_human_message_to_session(user_id, int(session_id), message)
+        if not detail:
+            existing = service.get_session_detail(user_id, int(session_id))
+            if not existing:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Conversation not found",
+                )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No active intervention for this conversation.",
+            )
+        return {"success": True, "conversation": detail.model_dump()}
+
     cm = ConversationManager()
     state = cm.get_conversation_state(user_id)
 

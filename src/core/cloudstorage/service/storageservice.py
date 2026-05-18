@@ -96,6 +96,7 @@ class StorageService:
         timeout_seconds: int = 30,
         subfolder: str = "operations/",
         folder: Optional[Union["StorageFolder", str]] = None,
+        metadata: Optional[dict[str, str]] = None,
     ) -> str:
         """Upload a file-like object to Contabo S3 storage and return the object URL.
 
@@ -133,7 +134,9 @@ class StorageService:
                 extra_args = {}
                 if content_type:
                     extra_args["ContentType"] = content_type
-                
+                if metadata:
+                    extra_args["Metadata"] = metadata
+
                 self.s3_client.upload_fileobj(
                     file_obj,
                     self.bucket,
@@ -217,7 +220,8 @@ class StorageService:
     ) -> list[dict]:
         """List objects under a given folder + prefix.
 
-        Returns a list of dicts: { "key": str, "url": str, "last_modified": datetime | None }.
+        Returns a list of dicts:
+        { "key": str, "url": str, "last_modified": datetime | None, "metadata": dict }.
         """
         subfolder = self.resolve_subfolder(folder=folder, subfolder=subfolder)
         full_prefix = f"{subfolder}{prefix}"
@@ -245,11 +249,23 @@ class StorageService:
                     Params={"Bucket": self.bucket, "Key": key},
                     ExpiresIn=31536000,
                 )
+                object_metadata: dict[str, str] = {}
+                try:
+                    head = self.s3_client.head_object(Bucket=self.bucket, Key=key)
+                    raw_meta = head.get("Metadata") or {}
+                    if isinstance(raw_meta, dict):
+                        object_metadata = {
+                            str(k): str(v) for k, v in raw_meta.items() if v is not None
+                        }
+                except ClientError as e:
+                    logger.warning("Could not read metadata for %s: %s", key, e)
+
                 results.append(
                     {
                         "key": key,
                         "url": url,
                         "last_modified": obj.get("LastModified"),
+                        "metadata": object_metadata,
                     }
                 )
 

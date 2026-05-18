@@ -238,6 +238,37 @@ class ConversationListService:
             updated_at=row.updated_at or datetime.utcnow(),
         )
 
+    def append_human_message_to_session(
+        self, user_identifier: str, session_id: int, message: str
+    ) -> Optional[ConversationDetailDTO]:
+        """Append an agent/human message to a session owned by the authenticated user."""
+        row = self._session_owned_by_user(session_id, user_identifier)
+        if not row:
+            return None
+
+        state = dict(row.conversation_state or {})
+        if not state.get("intervention_active"):
+            return None
+
+        history = list(state.get("conversation_history") or [])
+        history.append(
+            {
+                "role": "human",
+                "content": message,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+        if len(history) > 20:
+            history = history[-20:]
+        state["conversation_history"] = history
+        row.conversation_state = state
+        row.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(row)
+
+        user_names = self._load_user_fullnames({row.user_id})
+        return self._to_detail(row, user_names)
+
     def deactivate_intervention_for_session(
         self, user_identifier: str, session_id: int
     ) -> Optional[ConversationDetailDTO]:

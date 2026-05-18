@@ -6,6 +6,7 @@ from core.agent.dto.media_generation_request import MediaGenerationRequest
 from core.agent.tools.google_image.google_image_service import (
     GoogleImageGenerationError,
     GoogleImageService,
+    GoogleImageTimeoutError,
 )
 from core.agent.tools.google_veo.google_veo_service import (
     GoogleVeoGenerationError,
@@ -32,6 +33,8 @@ async def generate_image(req: MediaGenerationRequest):
         b64 = await service.generate_image_base64(req.prompt, user_id=req.user_id)
         mime_type = service.last_mime_type or "image/png"
         return ImageGenerationResponse(prompt=req.prompt, image_base64=b64, mime_type=mime_type)
+    except GoogleImageTimeoutError as e:
+        raise HTTPException(status_code=504, detail=str(e))
     except GoogleImageGenerationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

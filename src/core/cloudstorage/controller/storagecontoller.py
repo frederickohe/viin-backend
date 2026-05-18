@@ -298,16 +298,23 @@ async def list_my_files_in_folder(
     user_prefix = _safe_user_prefix(subject)
 
     objects = storage_service.list_files(folder=folder, prefix=user_prefix)
-    return [
-        FileDTO(
-            file_name=os.path.basename(o["key"]),
-            file_url=o["url"],
-            folder=folder.value,
-            object_key=o["key"],
-            uploaded_at=o.get("last_modified"),
+    items: list[FileDTO] = []
+    for o in objects:
+        meta = o.get("metadata") or {}
+        source_type = meta.get("source-type")
+        source_url = meta.get("source-url")
+        items.append(
+            FileDTO(
+                file_name=os.path.basename(o["key"]),
+                file_url=o["url"],
+                folder=folder.value,
+                object_key=o["key"],
+                uploaded_at=o.get("last_modified"),
+                source_type=source_type,
+                source_url=source_url,
+            )
         )
-        for o in objects
-    ]
+    return items
 
 
 @storage_routes.get("/me/download/{file_name}")
