@@ -36,6 +36,7 @@ from core.socialmedia.service.postiz_marketing_extract import (
 from core.socialmedia.service.digital_marketing_asset_service import DigitalMarketingAssetService
 from core.socialmedia.service.postiz_org_service import PostizOrgService
 from core.socialmedia.model.PostizOrganization import PostizOrganization
+from core.chatwoot.controller.chatwoot_controller import resolve_internal_user_id
 from core.user.model.User import User
 from utilities.crypto import encrypt_secret
 from utilities.dbconfig import get_db
@@ -116,7 +117,7 @@ async def _ensure_postiz_api_key(user_id: str, db: Session) -> Optional[str]:
 
 # Dependency for token validation
 def validate_token(authjwt: AuthJWT = Depends()) -> str:
-    """Validate JWT token and return user ID"""
+    """Validate JWT and return JWT subject (email at sign-in; may be internal id)."""
     try:
         authjwt.jwt_required()
         return authjwt.get_jwt_subject()
@@ -127,12 +128,22 @@ def validate_token(authjwt: AuthJWT = Depends()) -> str:
         )
 
 
+def _get_user_for_jwt_subject(db: Session, jwt_subject: str) -> User:
+    """Resolve Autobus user from JWT `sub` (email or internal id)."""
+    user = db.query(User).filter(User.email == jwt_subject).first()
+    if not user:
+        user = db.query(User).filter(User.id == jwt_subject).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
 # ==================== OAuth Flow Routes ====================
 
 @social_routes.get("/connect/{platform}")
 async def initiate_oauth_flow(
     platform: str,
-    user_id: str = Depends(validate_token),
+    jwt_subject: str = Depends(validate_token),
     db: Session = Depends(get_db)
 ):
     """
@@ -146,6 +157,8 @@ async def initiate_oauth_flow(
         Redirect URL to Blotato OAuth endpoint
     """
     try:
+        internal_user_id = resolve_internal_user_id(db, jwt_subject)
+
         # Normalize platform
         platform_upper = platform.upper()
         
@@ -161,13 +174,15 @@ async def initiate_oauth_flow(
         postiz_base_url = os.getenv("POSTIZ_BASE_URL", "").strip()
         if platform_upper == "FACEBOOK" and postiz_base_url:
             try:
-                api_key = await _ensure_postiz_api_key(user_id, db)
+                api_key = await _ensure_postiz_api_key(internal_user_id, db)
             except Exception as postiz_error:
-                logger.warning(f"[SOCIAL] Postiz provisioning failed for user {user_id}: {postiz_error}")
-                api_key = _resolve_postiz_api_key(user_id, db)
+                logger.warning(
+                    f"[SOCIAL] Postiz provisioning failed for user {internal_user_id}: {postiz_error}"
+                )
+                api_key = _resolve_postiz_api_key(internal_user_id, db)
 
             browser_postiz_url = (os.getenv("POSTIZ_PUBLIC_URL", "").strip() or postiz_base_url).rstrip("/")
-            user = db.query(User).filter(User.id == user_id).first()
+            user = db.query(User).filter(User.id == internal_user_id).first()
             postiz_login_ready = False
             postiz_login_payload: Dict[str, Any] = {}
 
@@ -182,7 +197,9 @@ async def initiate_oauth_flow(
                     )
                     postiz_login_ready = True
                 except Exception as login_error:
-                    logger.warning(f"[SOCIAL] Postiz auto-login failed for user {user_id}: {login_error}")
+                    logger.warning(
+                        f"[SOCIAL] Postiz auto-login failed for user {internal_user_id}: {login_error}"
+                    )
 
                 # Frontend can call this payload directly from browser for a real user session.
                 postiz_login_payload = {
@@ -202,12 +219,12 @@ async def initiate_oauth_flow(
                 "postiz_ready": bool(api_key),
                 "postiz_login_ready": postiz_login_ready,
                 "postiz_login": postiz_login_payload,
-                "message": "Open this URL, sign in to Postiz, and connect your Facebook channel."
+                "message": "Open this URL, sign in to Postiz, and connect your Facebook channel.",
             }
 
         # Legacy Blotato OAuth flow
         # Create OAuth state for CSRF protection
-        state = BlotatoOAuthManager.create_state(user_id, platform_upper)
+        state = BlotatoOAuthManager.create_state(internal_user_id, platform_upper)
         
         # Generate OAuth URL
         callback_url = f"{os.getenv('BASE_FRONTEND_URL', 'http://localhost:3000')}/api/social/callback"
@@ -216,7 +233,7 @@ async def initiate_oauth_flow(
             state=state
         )
         
-        logger.info(f"[SOCIAL] OAuth flow initiated for user {user_id}, platform {platform_upper}")
+        logger.info(f"[SOCIAL] OAuth flow initiated for user {internal_user_id}, platform {platform_upper}")
         
         return {
             "authorization_url": auth_url,
@@ -344,7 +361,7 @@ async def oauth_callback(
 
 @social_routes.get("/accounts", response_model=SocialAccountsListResponse)
 async def get_user_accounts(
-    user_id: str = Depends(validate_token),
+    jwt_subject: str = Depends(validate_token),
     db: Session = Depends(get_db)
 ):
     """
@@ -354,10 +371,11 @@ async def get_user_accounts(
         List of connected social accounts
     """
     try:
+        internal_user_id = resolve_internal_user_id(db, jwt_subject)
         social_service = SocialMediaService(db, blotato_client)
-        accounts = social_service.get_user_accounts(user_id)
+        accounts = social_service.get_user_accounts(internal_user_id)
         
-        logger.info(f"[SOCIAL] Retrieved {len(accounts)} accounts for user {user_id}")
+        logger.info(f"[SOCIAL] Retrieved {len(accounts)} accounts for user {internal_user_id}")
         
         account_responses = [
             SocialAccountResponse.from_orm(acc) for acc in accounts
@@ -380,7 +398,7 @@ async def get_user_accounts(
 async def disconnect_account(
     account_id: str,
     request: DisconnectAccountRequest,
-    user_id: str = Depends(validate_token),
+    jwt_subject: str = Depends(validate_token),
     db: Session = Depends(get_db)
 ):
     """
@@ -395,8 +413,9 @@ async def disconnect_account(
         Disconnection status
     """
     try:
+        internal_user_id = resolve_internal_user_id(db, jwt_subject)
         social_service = SocialMediaService(db, blotato_client)
-        success, message = await social_service.disconnect_account(account_id, user_id)
+        success, message = await social_service.disconnect_account(account_id, internal_user_id)
         
         if not success:
             raise HTTPException(
@@ -404,7 +423,7 @@ async def disconnect_account(
                 detail=message
             )
         
-        logger.info(f"[SOCIAL] Account disconnected: {account_id} by user {user_id}")
+        logger.info(f"[SOCIAL] Account disconnected: {account_id} by user {internal_user_id}")
         
         return {
             "success": True,
@@ -425,7 +444,7 @@ async def disconnect_account(
 @social_routes.post("/refresh", response_model=RefreshAccountsResponse)
 async def refresh_accounts(
     request: RefreshAccountsRequest,
-    user_id: str = Depends(validate_token),
+    jwt_subject: str = Depends(validate_token),
     db: Session = Depends(get_db)
 ):
     """
@@ -439,9 +458,10 @@ async def refresh_accounts(
         Updated list of connected accounts
     """
     try:
+        internal_user_id = resolve_internal_user_id(db, jwt_subject)
         # Get user's existing accounts to retrieve access token
         social_service = SocialMediaService(db, blotato_client)
-        user_accounts = social_service.get_user_accounts(user_id)
+        user_accounts = social_service.get_user_accounts(internal_user_id)
         
         # Get access token from first account (or find from Blotato)
         # In production, store access token securely for the user
@@ -462,7 +482,7 @@ async def refresh_accounts(
         
         # Refresh accounts
         success, accounts, message = await social_service.refresh_accounts(
-            user_id=user_id,
+            user_id=internal_user_id,
             access_token=access_token,
             platforms=request.platforms
         )
@@ -473,7 +493,7 @@ async def refresh_accounts(
                 detail=message
             )
         
-        logger.info(f"[SOCIAL] Refreshed accounts for user {user_id}: {message}")
+        logger.info(f"[SOCIAL] Refreshed accounts for user {internal_user_id}: {message}")
         
         account_responses = [
             SocialAccountResponse.from_orm(acc) for acc in accounts
@@ -501,7 +521,7 @@ async def refresh_accounts(
 @social_routes.post("/post", response_model=PublishPostResponse)
 async def publish_post(
     request: PublishPostRequest,
-    user_id: str = Depends(validate_token),
+    jwt_subject: str = Depends(validate_token),
     db: Session = Depends(get_db)
 ):
     """
@@ -515,9 +535,10 @@ async def publish_post(
         Publishing results for each platform
     """
     try:
+        internal_user_id = resolve_internal_user_id(db, jwt_subject)
         # Get user's access token for media uploads
         social_service = SocialMediaService(db, blotato_client)
-        user_accounts = social_service.get_user_accounts(user_id)
+        user_accounts = social_service.get_user_accounts(internal_user_id)
         
         access_token = None
         if user_accounts:
@@ -526,12 +547,15 @@ async def publish_post(
         # Publish post
         publishing_service = PostPublishingService(db, blotato_client)
         response = await publishing_service.publish_post(
-            user_id=user_id,
+            user_id=internal_user_id,
             publish_request=request,
             access_token=access_token
         )
         
-        logger.info(f"[SOCIAL] Post published by user {user_id}: {response.successful_posts}/{response.total_platforms} successful")
+        logger.info(
+            f"[SOCIAL] Post published by user {internal_user_id}: "
+            f"{response.successful_posts}/{response.total_platforms} successful"
+        )
         
         return response
         
@@ -547,7 +571,7 @@ async def publish_post(
 
 @social_routes.get("/postiz/integrations")
 async def postiz_list_integrations(
-    user_id: str = Depends(validate_token),
+    jwt_subject: str = Depends(validate_token),
     db: Session = Depends(get_db),
 ):
     """
@@ -558,7 +582,8 @@ async def postiz_list_integrations(
     if not postiz_base_url:
         raise HTTPException(status_code=400, detail="POSTIZ_BASE_URL not configured")
 
-    api_key = _resolve_postiz_api_key(user_id, db)
+    internal_user_id = resolve_internal_user_id(db, jwt_subject)
+    api_key = _resolve_postiz_api_key(internal_user_id, db)
     if not api_key:
         raise HTTPException(
             status_code=404,
@@ -574,7 +599,7 @@ async def postiz_list_integrations(
 
 @social_routes.post("/postiz/auto-login")
 async def postiz_auto_login(
-    user_id: str = Depends(validate_token),
+    jwt_subject: str = Depends(validate_token),
     db: Session = Depends(get_db),
 ):
     """
@@ -585,15 +610,19 @@ async def postiz_auto_login(
     if not postiz_base_url:
         raise HTTPException(status_code=400, detail="POSTIZ_BASE_URL not configured")
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user or not user.email:
+    user = _get_user_for_jwt_subject(db, jwt_subject)
+    if not user.email:
         raise HTTPException(status_code=404, detail="User/email not found")
+
+    internal_user_id = user.id
 
     # Ensure org + API key exists for this user before auto-login redirect.
     try:
-        _ = await _ensure_postiz_api_key(user_id, db)
+        _ = await _ensure_postiz_api_key(internal_user_id, db)
     except Exception as ensure_error:
-        logger.warning(f"[SOCIAL] Postiz provisioning check failed for user {user_id}: {ensure_error}")
+        logger.warning(
+            f"[SOCIAL] Postiz provisioning check failed for user {internal_user_id}: {ensure_error}"
+        )
 
     browser_postiz_url = (os.getenv("POSTIZ_PUBLIC_URL", "").strip() or postiz_base_url).rstrip("/")
     postiz_password = derive_postiz_password(username=user.fullname)
@@ -615,7 +644,9 @@ async def postiz_auto_login(
         )
         postiz_login_ready = True
     except Exception as login_error:
-        logger.warning(f"[SOCIAL] Postiz auto-login validation failed for user {user_id}: {login_error}")
+        logger.warning(
+            f"[SOCIAL] Postiz auto-login validation failed for user {internal_user_id}: {login_error}"
+        )
 
     return {
         "postiz_login_ready": postiz_login_ready,
@@ -653,7 +684,8 @@ async def postiz_create_post(
     if not postiz_base_url:
         raise HTTPException(status_code=400, detail="POSTIZ_BASE_URL not configured")
 
-    api_key = _resolve_postiz_api_key(jwt_subject, db)
+    internal_user_id = resolve_internal_user_id(db, jwt_subject)
+    api_key = _resolve_postiz_api_key(internal_user_id, db)
     if not api_key:
         raise HTTPException(
             status_code=404,
@@ -669,7 +701,7 @@ async def postiz_create_post(
     canonical_agent = normalize_digital_marketing_agent_name(agent_name)
     if canonical_agent:
         try:
-            user = db.query(User).filter(User.email == jwt_subject).first()
+            user = _get_user_for_jwt_subject(db, jwt_subject)
             if user:
                 text, links = extract_marketing_text_and_links(payload)
                 DigitalMarketingAssetService(db).create_from_postiz(
@@ -699,9 +731,7 @@ async def list_digital_marketing_assets(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    user = db.query(User).filter(User.email == jwt_subject).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = _get_user_for_jwt_subject(db, jwt_subject)
 
     svc = DigitalMarketingAssetService(db)
     rows = svc.list_for_user(str(user.id), limit=limit, offset=offset)
@@ -719,9 +749,7 @@ async def get_digital_marketing_asset(
     jwt_subject: str = Depends(validate_token),
     db: Session = Depends(get_db),
 ):
-    user = db.query(User).filter(User.email == jwt_subject).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = _get_user_for_jwt_subject(db, jwt_subject)
 
     row = DigitalMarketingAssetService(db).get_for_user(str(user.id), asset_id)
     if not row:
@@ -735,9 +763,7 @@ async def download_digital_marketing_asset(
     jwt_subject: str = Depends(validate_token),
     db: Session = Depends(get_db),
 ):
-    user = db.query(User).filter(User.email == jwt_subject).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = _get_user_for_jwt_subject(db, jwt_subject)
 
     row = DigitalMarketingAssetService(db).get_for_user(str(user.id), asset_id)
     if not row:
