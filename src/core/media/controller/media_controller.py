@@ -11,6 +11,7 @@ from core.agent.tools.google_image.google_image_service import (
 from core.agent.tools.google_veo.google_veo_service import (
     GoogleVeoGenerationError,
     GoogleVeoService,
+    GoogleVeoTimeoutError,
 )
 from core.media.dto.media_generation_response import (
     ImageGenerationResponse,
@@ -69,6 +70,8 @@ async def generate_video(
             video_url=video_url,
             stored_url=None,
         )
+    except GoogleVeoTimeoutError as e:
+        raise HTTPException(status_code=504, detail=str(e))
     except GoogleVeoGenerationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

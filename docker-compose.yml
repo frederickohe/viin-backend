@@ -132,6 +132,8 @@ services:
       VEO_GENERATE_URL: ${VEO_GENERATE_URL:-https://generativelanguage.googleapis.com/v1beta}
       VEO_MODEL: ${VEO_MODEL:-}
       VEO_USE_X_GOOG_API_KEY: ${VEO_USE_X_GOOG_API_KEY:-false}
+      VEO_POLL_INTERVAL_SECONDS: ${VEO_POLL_INTERVAL_SECONDS:-10}
+      VEO_MAX_POLL_SECONDS: ${VEO_MAX_POLL_SECONDS:-600}
 
       BLOTATO_API_KEY: ${BLOTATO_API_KEY:-your_blotato_api_key_here}
       BLOTATO_CLIENT_ID: ${BLOTATO_CLIENT_ID:-your_blotato_client_id_here}

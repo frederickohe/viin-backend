@@ -110,7 +110,12 @@ class GoogleImageService:
                     "role": "user",
                     "parts": [{"text": prompt}],
                 }
-            ]
+            ],
+            # Required for Gemini image models; without this the API often returns
+            # text-only responses with no inline image bytes.
+            "generationConfig": {
+                "responseModalities": ["TEXT", "IMAGE"],
+            },
         }
         # Note: Google's Generative Language `generateContent` does not accept an
         # arbitrary `user_id` field; passing it causes INVALID_ARGUMENT.
@@ -147,7 +152,11 @@ class GoogleImageService:
 
         extracted = _extract_first_base64_image(data)
         if not extracted:
-            raise GoogleImageGenerationError("No base64 image data found in Google image API response")
+            raise GoogleImageGenerationError(
+                "No base64 image data found in Google image API response. "
+                "Confirm NANA_BANANA_MODEL is an image-capable Gemini model "
+                "(e.g. gemini-2.5-flash-image)."
+            )
         self.last_mime_type = _extract_first_mime_type(data) or "image/png"
         return extracted
 
