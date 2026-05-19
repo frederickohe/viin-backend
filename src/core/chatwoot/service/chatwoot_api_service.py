@@ -496,10 +496,10 @@ class ChatwootAccountClient:
 
 def derive_chatwoot_password(*, username: str) -> str:
     """
-    Chatwoot sign-in password: Autobus username (``fullname``), not the Autobus
-    login password. Email is used as the Chatwoot account identifier.
+    Chatwoot sign-in password: Autobus username (``fullname``) plus a fixed suffix
+    for Devise complexity rules. Email is used as the Chatwoot account identifier.
     """
-    from utilities.integration_credentials import integration_local_password
+    from utilities.integration_credentials import integration_chatwoot_password
 
-    return integration_local_password(username=username)
+    return integration_chatwoot_password(username=username)
 
