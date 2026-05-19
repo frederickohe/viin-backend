@@ -147,6 +147,7 @@ class SubscriptionService:
                             self.db.commit()
             except Exception as e:
                 # Don't fail the subscription if Postiz is down/misconfigured.
+                self.db.rollback()
                 logger.warning(
                     f"[POSTIZ] Provisioning skipped/failed on subscribe for user {user_id} "
                     f"(POSTIZ_BASE_URL={os.getenv('POSTIZ_BASE_URL','').strip()!r}): {e}"
@@ -217,6 +218,7 @@ class SubscriptionService:
                             self.db.commit()
             except Exception as e:
                 # Don't fail the subscription if Chatwoot is down/misconfigured.
+                self.db.rollback()
                 logger.warning(
                     f"[CHATWOOT] Provisioning skipped/failed on subscribe for user {user_id} "
                     f"(CHATWOOT_BASE_URL={os.getenv('CHATWOOT_BASE_URL','').strip()!r}): {e}"
