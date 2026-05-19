@@ -10,6 +10,7 @@ class SocialPlatformEnum(str, Enum):
     LINKEDIN = "LINKEDIN"
     FACEBOOK = "FACEBOOK"
     INSTAGRAM = "INSTAGRAM"
+    WHATSAPP = "WHATSAPP"
     TIKTOK = "TIKTOK"
     YOUTUBE = "YOUTUBE"
     THREADS = "THREADS"

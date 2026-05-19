@@ -222,6 +222,46 @@ class PostizClient:
                 )
             return res.json()
 
+    async def get_social_connect_url(
+        self,
+        public_api_key: str,
+        integration: str,
+        *,
+        refresh: Optional[str] = None,
+        timeout_s: float = 20.0,
+    ) -> str:
+        """
+        OAuth URL for connecting a channel via Postiz Public API
+        (`GET /api/public/v1/social/{integration}`).
+        """
+        slug = (integration or "").strip().lower()
+        if not slug:
+            raise PostizAPIError("integration slug is required")
+
+        params: Dict[str, str] = {}
+        if refresh:
+            params["refresh"] = refresh.strip()
+
+        async with httpx.AsyncClient(timeout=timeout_s) as client:
+            res = await client.get(
+                self._url(f"/api/public/v1/social/{slug}"),
+                headers={"Authorization": public_api_key},
+                params=params or None,
+            )
+            if res.status_code >= 400:
+                raise PostizAPIError(
+                    f"Postiz social connect failed ({res.status_code}): {res.text}"
+                )
+            data = res.json() if res.text.strip() else {}
+            if isinstance(data, dict):
+                url = data.get("url") or data.get("authorization_url")
+                if url:
+                    return str(url).strip()
+            raise PostizAPIError(
+                "Postiz social connect response missing url; "
+                "ensure FACEBOOK_APP_ID/SECRET are configured on Postiz."
+            )
+
 
 def postiz_enabled() -> bool:
     return bool(os.getenv("POSTIZ_BASE_URL", "").strip())

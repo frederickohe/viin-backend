@@ -138,6 +138,125 @@ def _get_user_for_jwt_subject(db: Session, jwt_subject: str) -> User:
     return user
 
 
+# Postiz Public API `GET /api/public/v1/social/{slug}` (direct provider OAuth).
+_POSTIZ_OAUTH_SLUG_BY_PLATFORM: Dict[str, str] = {
+    "FACEBOOK": "facebook",
+    "LINKEDIN": "linkedin",
+    "INSTAGRAM": "instagram",
+    "TWITTER": "x",
+    "WHATSAPP": "whatsapp",
+}
+
+_CONNECT_PATH_TO_PLATFORM: Dict[str, str] = {
+    "facebook": "FACEBOOK",
+    "linkedin": "LINKEDIN",
+    "instagram": "INSTAGRAM",
+    "twitter": "TWITTER",
+    "x": "TWITTER",
+    "whatsapp": "WHATSAPP",
+    "whatsapp-status": "WHATSAPP",
+}
+
+_POSTIZ_OAUTH_USER_MESSAGE: Dict[str, str] = {
+    "facebook": "Sign in with Facebook to connect your page.",
+    "linkedin": "Sign in with LinkedIn to connect your account.",
+    "instagram": "Sign in with Instagram to connect your account.",
+    "x": "Sign in with X to connect your account.",
+    "whatsapp": "Sign in with WhatsApp to connect your channel.",
+}
+
+
+def _resolve_connect_platform(platform: str) -> tuple[str, Optional[str]]:
+    """Map URL path segment to (PLATFORM_UPPER, postiz_oauth_slug)."""
+    path_key = platform.strip().lower().replace(" ", "-").replace("_", "-")
+    platform_upper = _CONNECT_PATH_TO_PLATFORM.get(path_key) or platform.strip().upper().replace(
+        " ", "_"
+    )
+    if platform_upper == "X":
+        platform_upper = "TWITTER"
+    postiz_slug = _POSTIZ_OAUTH_SLUG_BY_PLATFORM.get(platform_upper)
+    return platform_upper, postiz_slug
+
+
+async def _build_postiz_platform_connect(
+    *,
+    internal_user_id: str,
+    db: Session,
+    platform_upper: str,
+    postiz_slug: str,
+) -> Dict[str, Any]:
+    postiz_base_url = os.getenv("POSTIZ_BASE_URL", "").strip()
+    try:
+        api_key = await _ensure_postiz_api_key(internal_user_id, db)
+    except Exception as postiz_error:
+        logger.warning(
+            f"[SOCIAL] Postiz provisioning failed for user {internal_user_id}: {postiz_error}"
+        )
+        api_key = _resolve_postiz_api_key(internal_user_id, db)
+
+    browser_postiz_url = (os.getenv("POSTIZ_PUBLIC_URL", "").strip() or postiz_base_url).rstrip(
+        "/"
+    )
+    user = db.query(User).filter(User.id == internal_user_id).first()
+    postiz_login_ready = False
+    postiz_login_payload: Dict[str, Any] = {}
+    authorization_url = f"{browser_postiz_url}/integrations/social/{postiz_slug}"
+    direct_oauth = False
+
+    if api_key:
+        try:
+            authorization_url = await PostizClient(base_url=postiz_base_url).get_social_connect_url(
+                api_key, postiz_slug
+            )
+            direct_oauth = True
+        except Exception as oauth_error:
+            logger.warning(
+                f"[SOCIAL] Postiz {postiz_slug} OAuth URL failed for user {internal_user_id}: {oauth_error}"
+            )
+
+    if not direct_oauth and user and user.email:
+        postiz_password = derive_postiz_password(username=user.fullname)
+        try:
+            await PostizClient(base_url=postiz_base_url).login_local(
+                email=user.email,
+                password=postiz_password,
+            )
+            postiz_login_ready = True
+        except Exception as login_error:
+            logger.warning(
+                f"[SOCIAL] Postiz auto-login failed for user {internal_user_id}: {login_error}"
+            )
+
+        postiz_login_payload = {
+            "url": f"{browser_postiz_url}/api/auth/login",
+            "body": {
+                "email": user.email,
+                "password": postiz_password,
+                "providerToken": "",
+                "provider": "LOCAL",
+            },
+        }
+
+    provider_label = postiz_slug.replace("-", " ").title()
+    return {
+        "authorization_url": authorization_url,
+        "platform": platform_upper,
+        "provider": "POSTIZ",
+        "postiz_ready": bool(api_key),
+        "postiz_login_ready": postiz_login_ready,
+        "postiz_login": postiz_login_payload,
+        "direct_oauth": direct_oauth,
+        "message": (
+            _POSTIZ_OAUTH_USER_MESSAGE.get(
+                postiz_slug,
+                f"Sign in with {provider_label} to connect your channel.",
+            )
+            if direct_oauth
+            else f"Open this URL to sign in to Postiz, then connect {provider_label}."
+        ),
+    }
+
+
 # ==================== OAuth Flow Routes ====================
 
 @social_routes.get("/connect/{platform}")
@@ -159,68 +278,22 @@ async def initiate_oauth_flow(
     try:
         internal_user_id = resolve_internal_user_id(db, jwt_subject)
 
-        # Normalize platform
-        platform_upper = platform.upper()
-        
-        # Validate platform
+        platform_upper, postiz_slug = _resolve_connect_platform(platform)
         valid_platforms = [p.value for p in SocialPlatformEnum]
         if platform_upper not in valid_platforms:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported platform. Supported: {', '.join(valid_platforms)}"
+                detail=f"Unsupported platform. Supported: {', '.join(valid_platforms)}",
             )
-        
-        # Prefer Postiz flow for Facebook when Postiz is configured.
+
         postiz_base_url = os.getenv("POSTIZ_BASE_URL", "").strip()
-        if platform_upper == "FACEBOOK" and postiz_base_url:
-            try:
-                api_key = await _ensure_postiz_api_key(internal_user_id, db)
-            except Exception as postiz_error:
-                logger.warning(
-                    f"[SOCIAL] Postiz provisioning failed for user {internal_user_id}: {postiz_error}"
-                )
-                api_key = _resolve_postiz_api_key(internal_user_id, db)
-
-            browser_postiz_url = (os.getenv("POSTIZ_PUBLIC_URL", "").strip() or postiz_base_url).rstrip("/")
-            user = db.query(User).filter(User.id == internal_user_id).first()
-            postiz_login_ready = False
-            postiz_login_payload: Dict[str, Any] = {}
-
-            if user and user.email:
-                postiz_password = derive_postiz_password(username=user.fullname)
-                # Warm Postiz session and validate creds using the same payload contract
-                # expected by Postiz LOCAL auth.
-                try:
-                    await PostizClient(base_url=postiz_base_url).login_local(
-                        email=user.email,
-                        password=postiz_password,
-                    )
-                    postiz_login_ready = True
-                except Exception as login_error:
-                    logger.warning(
-                        f"[SOCIAL] Postiz auto-login failed for user {internal_user_id}: {login_error}"
-                    )
-
-                # Frontend can call this payload directly from browser for a real user session.
-                postiz_login_payload = {
-                    "url": f"{browser_postiz_url}/api/auth/login",
-                    "body": {
-                        "email": user.email,
-                        "password": postiz_password,
-                        "providerToken": "",
-                        "provider": "LOCAL",
-                    },
-                }
-
-            return {
-                "authorization_url": f"{browser_postiz_url}/integrations",
-                "platform": platform_upper,
-                "provider": "POSTIZ",
-                "postiz_ready": bool(api_key),
-                "postiz_login_ready": postiz_login_ready,
-                "postiz_login": postiz_login_payload,
-                "message": "Open this URL, sign in to Postiz, and connect your Facebook channel.",
-            }
+        if postiz_slug and postiz_base_url:
+            return await _build_postiz_platform_connect(
+                internal_user_id=internal_user_id,
+                db=db,
+                platform_upper=platform_upper,
+                postiz_slug=postiz_slug,
+            )
 
         # Legacy Blotato OAuth flow
         # Create OAuth state for CSRF protection
