@@ -7,6 +7,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 from dotenv import load_dotenv
@@ -110,6 +111,41 @@ class GoogleVeoService:
             params["key"] = self._api_key
         return headers, params
 
+    def _binary_download_request(self, source_url: str) -> tuple[str, dict[str, str]]:
+        """
+        Build URL + headers for downloading generated media.
+
+        The Files API requires ``alt=media`` on ``.../files/{id}:download``.
+        Using JSON Accept/Content-Type on this GET often yields 400 from Google.
+        """
+        raw = source_url.strip()
+        if "://" not in raw:
+            raw = f"{self._base_url.rstrip('/')}/{raw.lstrip('/')}"
+        parsed = urlparse(raw)
+
+        path = parsed.path or ""
+        is_files = "/files/" in path
+        if is_files and ":download" not in path:
+            path = path.rstrip("/") + ":download"
+
+        q_existing = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        q_existing.pop("key", None)
+
+        headers: dict[str, str] = {"Accept": "*/*"}
+        query_parts = dict(q_existing)
+        if is_files:
+            query_parts["alt"] = "media"
+        if self._use_x_goog:
+            headers["x-goog-api-key"] = self._api_key
+        else:
+            query_parts["key"] = self._api_key
+
+        new_query = urlencode(list(query_parts.items()))
+        clean = urlunparse(
+            (parsed.scheme, parsed.netloc, path, parsed.params, new_query, parsed.fragment)
+        )
+        return clean, headers
+
     def _http_timeout(self) -> httpx.Timeout:
         return httpx.Timeout(
             connect=30.0,
@@ -210,17 +246,20 @@ class GoogleVeoService:
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp_path = tmp.name
 
-            dl_headers, dl_params = self._auth()
+            download_url, dl_headers = self._binary_download_request(source_url)
             download_timeout = self._http_timeout()
             async with httpx.AsyncClient(
                 timeout=download_timeout, follow_redirects=True
             ) as client:
                 async with client.stream(
-                    "GET", source_url, headers=dl_headers, params=dl_params
+                    "GET",
+                    download_url,
+                    headers=dl_headers,
                 ) as r:
                     if r.status_code >= 400:
+                        detail = (await r.aread()).decode(errors="replace")[:2000]
                         raise GoogleVeoGenerationError(
-                            f"Failed to download generated video ({r.status_code})"
+                            f"Failed to download generated video ({r.status_code}): {detail}"
                         )
                     with open(tmp_path, "wb") as f:
                         async for chunk in r.aiter_bytes():
