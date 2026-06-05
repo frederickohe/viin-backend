@@ -106,7 +106,7 @@ services:
       USE_WIREPICK_API_KEY: ${USE_WIREPICK_API_KEY:-true}
       
       # Frontend and Other URLs
-      BASE_FRONTEND_URL: ${BASE_FRONTEND_URL:-http://localhost:3000}
+      BASE_FRONTEND_URL: ${BASE_FRONTEND_URL:-https://useautobus.com}
       
       # OTP Configuration
       OTP_EXPIRE_MINUTES: ${OTP_EXPIRE_MINUTES:-5}
@@ -138,7 +138,7 @@ services:
       BLOTATO_API_KEY: ${BLOTATO_API_KEY:-your_blotato_api_key_here}
       BLOTATO_CLIENT_ID: ${BLOTATO_CLIENT_ID:-your_blotato_client_id_here}
       BLOTATO_CLIENT_SECRET: ${BLOTATO_CLIENT_SECRET:-your_blotato_client_secret_here}
-      BLOTATO_REDIRECT_URI: ${BLOTATO_REDIRECT_URI:-http://localhost:8000/api/social/callback}
+      BLOTATO_REDIRECT_URI: ${BLOTATO_REDIRECT_URI:-https://api.useautobus.com/api/social/callback}
 
       CONTABO_ACCESS_KEY: ${CONTABO_ACCESS_KEY:-e59e33a21a72b214bfc6aeb3e2fcd711}
       CONTABO_SECRET_KEY: ${CONTABO_SECRET_KEY:-939a59165a7490c08e78311d26182118}
@@ -166,7 +166,7 @@ services:
       # Browser-facing Chatwoot URL for login / inbox setup links (falls back to CHATWOOT_BASE_URL in code if unset).
       CHATWOOT_PUBLIC_URL: ${CHATWOOT_PUBLIC_URL:-http://localhost:3000}
       # Optional: public origin of this API for Meta → Autobus webhook hints (WhatsApp channel-link response).
-      AUTOBUS_PUBLIC_API_URL: ${AUTOBUS_PUBLIC_API_URL:-}
+      AUTOBUS_PUBLIC_API_URL: ${AUTOBUS_PUBLIC_API_URL:-https://api.useautobus.com}
 
       # Qdrant RAG stack: use `http://rag-api:8088` only when backend joins `greenbrain_rag`
       # (see `networks` below). Otherwise use a host-reachable URL, e.g.
@@ -189,6 +189,8 @@ services:
         condition: service_healthy
     networks:
       - autobus_network
+      # Caddy reverse proxy (api.useautobus.com → autobus_backend:8000)
+      - caddy
       # Optional: shared external network to reach Postiz/Chatwoot by container DNS.
       # Create it once via: `docker network create postiz-network`
       # Then ensure the Postiz compose also uses `postiz-network` by name.
@@ -207,6 +209,9 @@ volumes:
 networks:
   autobus_network:
     driver: bridge
+  caddy:
+    external: true
+    name: caddy
   postiz-network:
     external: true
     name: postiz-network
