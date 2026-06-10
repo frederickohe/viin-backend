@@ -12,6 +12,8 @@ from core.customers.dto.customer_dto import (
     CustomerMessageResponse,
 )
 from core.customers.service.customer_messaging_service import CustomerMessagingService
+from core.credits.model.credit_types import CreditType
+from core.credits.service.credit_service import CreditService
 from core.user.controller.usercontroller import validate_token, get_db
 from another_fastapi_jwt_auth import AuthJWT
 
@@ -191,12 +193,21 @@ def send_customer_sms(
     """Send a custom SMS to one or more customers by customer ID."""
     try:
         user_id = authjwt.get_jwt_subject()
+        recipient_count = max(1, len(request.customer_ids))
+        CreditService(db).require_credits(
+            user_id,
+            CreditType.SMS.value,
+            float(recipient_count),
+            "customer_sms",
+        )
         messaging_service = CustomerMessagingService(db)
         return messaging_service.send_sms(
             user_id=user_id,
             customer_ids=request.customer_ids,
             message=request.message.strip(),
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[BENEFICIARY_CONTROLLER] Error sending customer SMS: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -214,6 +225,13 @@ def send_customer_email(
     """Send a custom email to one or more customers by customer ID."""
     try:
         user_id = authjwt.get_jwt_subject()
+        recipient_count = max(1, len(request.customer_ids))
+        CreditService(db).require_credits(
+            user_id,
+            CreditType.EMAIL.value,
+            float(recipient_count),
+            "customer_email",
+        )
         messaging_service = CustomerMessagingService(db)
         return messaging_service.send_email(
             user_id=user_id,
@@ -221,6 +239,8 @@ def send_customer_email(
             subject=request.subject.strip(),
             body=request.body,
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except Exception as e:

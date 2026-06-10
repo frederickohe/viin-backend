@@ -114,6 +114,12 @@ class SubscriptionService:
             self.db.commit()
             self.db.refresh(new_subscription)
 
+            try:
+                from core.credits.service.credit_service import CreditService
+                CreditService(self.db).initialize_credits_for_subscription(user_id, new_subscription)
+            except Exception as e:
+                logger.warning(f"Credit initialization failed for user {user_id}: {e}")
+
             # Optional: Provision Postiz organization on first paid subscription.
             # If a mapping already exists, do nothing.
             try:
@@ -328,6 +334,12 @@ class SubscriptionService:
             self.db.add(new_subscription)
             self.db.commit()
             self.db.refresh(new_subscription)
+
+            try:
+                from core.credits.service.credit_service import CreditService
+                CreditService(self.db).initialize_credits_for_subscription(user_id, new_subscription)
+            except Exception as e:
+                logger.warning(f"Credit initialization failed on upgrade for user {user_id}: {e}")
 
             logger.info(f"User {user_id} upgraded from plan {current_subscription.plan_id} to {new_plan_id}")
 

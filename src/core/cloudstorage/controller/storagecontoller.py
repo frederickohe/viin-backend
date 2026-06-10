@@ -40,6 +40,8 @@ from core.notification.service.notification_service import NotificationService
 from another_fastapi_jwt_auth.exceptions import MissingTokenError
 from core.cloudstorage.service.storageservice import StorageService
 from core.cloudstorage.service.storageservice import StorageFolder
+from core.credits.model.credit_types import CreditType
+from core.credits.service.credit_service import CreditService
 from core.subscription.service.subscription_service import SubscriptionService
 from core.user.service.user_service import UserService
 from core.rag.rag_index_job_store import RagIndexJobStore
@@ -159,6 +161,14 @@ async def upload_rag_document_for_subscribed_user(
     if not raw:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file")
 
+    size_mb = max(0.01, len(raw) / (1024 * 1024))
+    CreditService(db).require_credits(
+        str(user.id),
+        CreditType.STORAGE_MB.value,
+        size_mb,
+        "rag_upload",
+    )
+
     safe_name = os.path.basename(file.filename or "upload")
     user_data = _user_data_from_user(user)
 
@@ -261,16 +271,33 @@ async def upload_multiple_files_for_me(
     files: List[UploadFile] = File(...),
     folder: StorageFolder = Query(...),
     authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
 ):
     subject = authjwt.get_jwt_subject()
     user_prefix = _safe_user_prefix(subject)
 
-    uploaded: List[FileDTO] = []
+    total_bytes = 0
+    payloads: list[tuple[UploadFile, bytes, str]] = []
     for f in files:
+        raw = await f.read()
+        total_bytes += len(raw)
         safe_name = os.path.basename(f.filename)
+        payloads.append((f, raw, safe_name))
+
+    if total_bytes > 0:
+        size_mb = max(0.01, total_bytes / (1024 * 1024))
+        CreditService(db).require_credits(
+            subject,
+            CreditType.STORAGE_MB.value,
+            size_mb,
+            "multi_upload",
+        )
+
+    uploaded: List[FileDTO] = []
+    for f, raw, safe_name in payloads:
         key_name = f"{user_prefix}{safe_name}"
         url = storage_service.upload_file(
-            f.file,
+            io.BytesIO(raw),
             key_name,
             content_type=f.content_type,
             folder=folder,

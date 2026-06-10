@@ -22,6 +22,7 @@ class SubscriptionPlan(Base):
     billing_period_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)  # e.g., 3 months, 6 months
     features: Mapped[str] = mapped_column(Text, nullable=False)  # JSON string of features
     agents: Mapped[str] = mapped_column(Text, nullable=False, default='[]')  # JSON string list of agent identifiers
+    credit_allocations: Mapped[Optional[str]] = mapped_column(Text)  # JSON: per-resource monthly credits
     description: Mapped[Optional[str]] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -59,3 +60,14 @@ class SubscriptionPlan(Base):
             return json.loads(self.agents) if self.agents else []
         except (json.JSONDecodeError, TypeError):
             return []
+
+    def get_credit_allocations(self) -> dict:
+        """Parse and return credit allocations as a dict."""
+        try:
+            if isinstance(self.credit_allocations, dict):
+                return self.credit_allocations
+            if self.credit_allocations:
+                return json.loads(self.credit_allocations)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return {}

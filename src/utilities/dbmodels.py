@@ -15,6 +15,8 @@ _model_modules = [
 	"core.cloudstorage.model.filemodel",
 	"core.subscription.model.user_subscription",
 	"core.subscription.model.subscription_plan",
+	"core.credits.model.user_credit_balance",
+	"core.credits.model.credit_usage_log",
 	"core.receipts.model.Receipt",
 	"core.payments.model.timeline",
 	"core.payments.model.paynetwork",

@@ -20,6 +20,7 @@ from core.payments.controller.invoicecontroller import invoice_routes
 from core.payments.controller.paymentcontroller import payment_routes
 from core.otp.controller.otpcontroller import otp_routes
 from core.subscription.controller.subscription_controller import subscription_routes
+from core.credits.controller.credit_controller import credit_routes
 from core.webhooks.controller.webhookscontroller import webhooks_routes
 from core.customers.controller.customer_controller import customer_routes
 from core.nlu.controller.nlucontroller import nlu_routes
@@ -50,6 +51,35 @@ async def lifespan(app: FastAPI):
     """Handle application startup and shutdown"""
     # Startup
     logger.info("[APP_STARTUP] Application starting...")
+    try:
+        import utilities.dbmodels  # noqa: F401 — register all ORM models
+        Base.metadata.create_all(bind=engine)
+        from sqlalchemy import inspect, text
+        from core.credits.service.credit_service import CreditService
+        from utilities.dbconfig import SessionLocal
+
+        insp = inspect(engine)
+        if "subscription_plans" in insp.get_table_names():
+            cols = {c["name"] for c in insp.get_columns("subscription_plans")}
+            if "credit_allocations" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE subscription_plans "
+                            "ADD COLUMN credit_allocations TEXT"
+                        )
+                    )
+                logger.info("[APP_STARTUP] Added subscription_plans.credit_allocations column")
+
+        db = SessionLocal()
+        try:
+            synced = CreditService(db).sync_plan_credit_allocations()
+            if synced:
+                logger.info(f"[APP_STARTUP] Synced credit allocations for {synced} plan(s)")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"[APP_STARTUP] Credit table init skipped: {e}")
     yield
     # Shutdown
     logger.info("[APP_SHUTDOWN] Application shutting down...")
@@ -112,6 +142,7 @@ app.include_router(billing_routes, prefix="/api/v1/billing", tags=["Billing Serv
 app.include_router(invoice_routes, prefix="/api/v1/invoice", tags=["Invoice Routes"])
 app.include_router(otp_routes, prefix="/api/v1/otp", tags=["OTP Routes"])
 app.include_router(subscription_routes, prefix="/api/v1/subscription", tags=["Subscription Routes"])
+app.include_router(credit_routes, prefix="/api/v1/credits", tags=["Credit Routes"])
 app.include_router(customer_routes, prefix="/api/v1/customers", tags=["Customer Routes"])
 app.include_router(webhooks_routes, prefix="/api/v1/webhooks", tags=["Webhooks Routes"])
 app.include_router(nlu_routes, prefix="/api/v1/nlu", tags=["NLU Routes"])
