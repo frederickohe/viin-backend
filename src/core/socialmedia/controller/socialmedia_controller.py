@@ -233,7 +233,7 @@ async def _build_postiz_platform_connect(
             )
 
         postiz_login_payload = {
-            "url": f"{browser_postiz_url}/api/auth/login",
+            "login_page_url": f"{browser_postiz_url}/auth",
             "body": {
                 "email": user.email,
                 "password": postiz_password,
@@ -730,11 +730,14 @@ async def postiz_auto_login(
     return {
         "postiz_login_ready": postiz_login_ready,
         "postiz_login": {
-            "url": f"{browser_postiz_url}/api/auth/login",
+            "login_page_url": f"{browser_postiz_url}/auth",
             "body": login_payload,
         },
         "authorization_url": f"{browser_postiz_url}/integrations",
-        "message": "Call postiz_login from browser, then redirect to authorization_url to link channels.",
+        "message": (
+            "Open login_page_url in a WebView, sign in with your Postiz account, "
+            "then navigate to authorization_url to link channels."
+        ),
     }
 
 

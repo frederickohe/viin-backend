@@ -26,6 +26,7 @@ from core.chatwoot.service.chatwoot_api_service import (
     derive_chatwoot_password,
 )
 from core.chatwoot.service.chatwoot_org_service import ChatwootOrgService
+from core.chatwoot.service.chatwoot_provision_service import ensure_chatwoot_provisioned
 from core.subscription.service.subscription_service import SubscriptionService
 from core.user.model.User import User
 from utilities.dbconfig import get_db
@@ -177,6 +178,8 @@ async def chatwoot_status(
     internal_id = resolve_internal_user_id(db, jwt_subject)
     sub_active = bool(SubscriptionService(db).get_user_active_subscription(internal_id))
     configured = chatwoot_enabled()
+    if sub_active and configured:
+        await ensure_chatwoot_provisioned(db, internal_id)
     mapping = ChatwootOrgService(db).get_for_user(internal_id)
     provisioned = mapping is not None
     token_valid: Optional[bool] = None
@@ -206,6 +209,7 @@ async def chatwoot_session(
     _require_chatwoot_env()
     internal_id = resolve_internal_user_id(db, jwt_subject)
     _require_subscription(db, internal_id)
+    await ensure_chatwoot_provisioned(db, internal_id)
     user = db.query(User).filter(User.id == internal_id).first()
     if not user or not user.email:
         raise HTTPException(status_code=404, detail="User email not found.")
@@ -244,6 +248,7 @@ async def chatwoot_channel_link(
     _require_chatwoot_env()
     internal_id = resolve_internal_user_id(db, jwt_subject)
     _require_subscription(db, internal_id)
+    await ensure_chatwoot_provisioned(db, internal_id)
     ch = _normalize_channel(channel)
     user = db.query(User).filter(User.id == internal_id).first()
     if not user or not user.email:
@@ -291,6 +296,7 @@ async def chatwoot_list_inboxes(
     _require_chatwoot_env()
     internal_id = resolve_internal_user_id(db, jwt_subject)
     _require_subscription(db, internal_id)
+    await ensure_chatwoot_provisioned(db, internal_id)
 
     def _load() -> list:
         _, client = _mapping_and_client(db, internal_id)
