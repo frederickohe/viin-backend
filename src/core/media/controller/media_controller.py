@@ -35,14 +35,15 @@ def _deduct_media_credit(
     authjwt: AuthJWT | None,
     req_user_id: str | None,
 ) -> None:
+    credit_service = CreditService(db)
     user_id = None
     if authjwt:
-        user_id = authjwt.get_jwt_subject()
+        user_id = credit_service.resolve_user_id(authjwt.get_jwt_subject())
     if not user_id and req_user_id:
-        user_id = CreditService(db).resolve_user_id(req_user_id)
+        user_id = credit_service.resolve_user_id(req_user_id)
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required for media generation.")
-    CreditService(db).require_credits(user_id, credit_type, 1.0, operation)
+    credit_service.require_credits(user_id, credit_type, 1.0, operation)
 
 
 @media_routes.post("/generate-image", response_model=ImageGenerationResponse)

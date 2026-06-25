@@ -196,6 +196,7 @@ class CreditService:
         raise_on_insufficient: bool = True,
     ) -> bool:
         """Atomically deduct credits. Returns True if successful."""
+        user_id = self._ensure_internal_user_id(user_id)
         balances = self._get_or_create_balances(user_id)
         target = next((b for b in balances if b.credit_type == credit_type), None)
 
