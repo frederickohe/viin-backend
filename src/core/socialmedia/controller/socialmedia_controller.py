@@ -162,14 +162,6 @@ _CONNECT_PATH_TO_PLATFORM: Dict[str, str] = {
     "whatsapp-status": "WHATSAPP",
 }
 
-_POSTIZ_OAUTH_USER_MESSAGE: Dict[str, str] = {
-    "facebook": "Sign in with Facebook to connect your page.",
-    "linkedin": "Sign in with LinkedIn to connect your account.",
-    "instagram": "Sign in with Instagram to connect your account.",
-    "x": "Sign in with X to connect your account.",
-    "whatsapp": "Sign in with WhatsApp to connect your channel.",
-}
-
 
 def _resolve_connect_platform(platform: str) -> tuple[str, Optional[str]]:
     """Map URL path segment to (PLATFORM_UPPER, postiz_oauth_slug)."""
@@ -205,21 +197,9 @@ async def _build_postiz_platform_connect(
     user = db.query(User).filter(User.id == internal_user_id).first()
     postiz_login_ready = False
     postiz_login_payload: Dict[str, Any] = {}
-    authorization_url = f"{browser_postiz_url}/integrations/social/{postiz_slug}"
-    direct_oauth = False
+    authorization_url = f"{browser_postiz_url}/integrations"
 
-    if api_key:
-        try:
-            authorization_url = await PostizClient(base_url=postiz_base_url).get_social_connect_url(
-                api_key, postiz_slug
-            )
-            direct_oauth = True
-        except Exception as oauth_error:
-            logger.warning(
-                f"[SOCIAL] Postiz {postiz_slug} OAuth URL failed for user {internal_user_id}: {oauth_error}"
-            )
-
-    if not direct_oauth and user and user.email:
+    if user and user.email:
         postiz_password = derive_postiz_password(username=user.fullname)
         try:
             await PostizClient(base_url=postiz_base_url).login_local(
@@ -250,14 +230,9 @@ async def _build_postiz_platform_connect(
         "postiz_ready": bool(api_key),
         "postiz_login_ready": postiz_login_ready,
         "postiz_login": postiz_login_payload,
-        "direct_oauth": direct_oauth,
+        "direct_oauth": False,
         "message": (
-            _POSTIZ_OAUTH_USER_MESSAGE.get(
-                postiz_slug,
-                f"Sign in with {provider_label} to connect your channel.",
-            )
-            if direct_oauth
-            else f"Open this URL to sign in to Postiz, then connect {provider_label}."
+            f"Sign in to Postiz, then connect {provider_label} from the integrations page."
         ),
     }
 
