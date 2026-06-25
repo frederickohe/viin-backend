@@ -79,6 +79,8 @@ class AuthService:
             date_of_birth=request.date_of_birth,
             gender=request.gender,
             address=request.address,
+            location=request.location,
+            ghana_card=request.ghana_card,
             
             company=request.company,
             current_branch=request.current_branch,

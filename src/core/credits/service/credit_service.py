@@ -27,15 +27,26 @@ class CreditService:
         self.db = db
 
     def resolve_user_id(self, identifier: Optional[str]) -> Optional[str]:
-        """Resolve internal user id from id or phone."""
+        """Resolve internal user id from id, email, or phone."""
         if not identifier:
             return None
         user = (
             self.db.query(User)
-            .filter((User.id == identifier) | (User.phone == identifier))
+            .filter(
+                (User.id == identifier)
+                | (User.email == identifier)
+                | (User.phone == identifier)
+            )
             .first()
         )
         return user.id if user else None
+
+    def _ensure_internal_user_id(self, identifier: str) -> str:
+        """Map JWT subject / phone / id to users.id before writing credit rows."""
+        user_id = self.resolve_user_id(identifier)
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        return user_id
 
     @staticmethod
     def _normalize_plan_key(plan_name: str) -> str:
@@ -74,6 +85,7 @@ class CreditService:
         self, user_id: str, subscription: Optional[UserSubscription] = None
     ) -> List[UserCreditBalance]:
         """Ensure the user has balance rows for the current billing period."""
+        user_id = self._ensure_internal_user_id(user_id)
         sub = subscription or SubscriptionService(self.db).get_user_active_subscription(user_id)
         now = datetime.now(timezone.utc)
 
@@ -124,6 +136,7 @@ class CreditService:
 
     def initialize_credits_for_subscription(self, user_id: str, subscription: UserSubscription) -> None:
         """Reset credit balances when a user subscribes or upgrades."""
+        user_id = self._ensure_internal_user_id(user_id)
         self.db.query(UserCreditBalance).filter(
             UserCreditBalance.user_id == user_id
         ).delete(synchronize_session=False)
