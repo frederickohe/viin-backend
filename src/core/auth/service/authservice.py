@@ -185,8 +185,14 @@ class AuthService:
             "user_id": user.id
         }
            
-    def authenticate_user(self, email: str, password: str):
-        db_user = self.db.query(User).filter(User.email == email).first()
+    def authenticate_user(self, identifier: str, password: str):
+        identifier = identifier.strip()
+        if not identifier:
+            raise InvalidCredentialsError()
+
+        db_user = self.db.query(User).filter(
+            (User.email == identifier) | (User.fullname == identifier)
+        ).first()
 
         if not db_user:
             raise InvalidCredentialsError()
@@ -198,7 +204,7 @@ class AuthService:
 
     def signin(self, user: BaseModel):
         """Login the user by generating a JWT token and returning tokens."""
-        db_user = self.authenticate_user(user.email, user.password)
+        db_user = self.authenticate_user(user.login_identifier, user.password)
 
         access_token = self.session_driver.create_access_token(
             data={"sub": db_user.email},

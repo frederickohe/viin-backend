@@ -74,9 +74,18 @@ class IntentProcessor:
         if intent == "greeting":
             return self._build_greeting_response(user_data)
 
+        if intent == "goodbye" and self._is_customer_session(user_data):
+            return RESPONSE_TEMPLATES["conversational"]["customer_goodbye"]
+
+        prompt_key = (
+            "customer_conversational"
+            if self._is_customer_session(user_data)
+            else "conversational"
+        )
+
         # Prepare enhanced system prompt with user context
         system_prompt = self._build_enhanced_system_prompt(
-            base_prompt=SYSTEM_PROMPTS["conversational"],
+            base_prompt=SYSTEM_PROMPTS[prompt_key],
             user_data=user_data,
             intent=intent,
             slots=slots
@@ -360,6 +369,21 @@ class IntentProcessor:
         return "\n".join(lines)
 
     @staticmethod
+    def _is_customer_session(user_data: Optional[Dict[str, Any]]) -> bool:
+        return bool((user_data or {}).get("is_customer_session"))
+
+    @staticmethod
+    def _business_display_name(user_data: Optional[Dict[str, Any]]) -> Optional[str]:
+        if not user_data:
+            return None
+        for key in ("company", "organization_workplace", "fullname"):
+            val = (user_data.get(key) or "").strip()
+            if val:
+                return val
+        merchant_id = (user_data.get("merchant_id") or user_data.get("db_user_id") or "").strip()
+        return merchant_id or None
+
+    @staticmethod
     def _greeting_display_name(user_data: Optional[Dict[str, Any]]) -> Optional[str]:
         """Prefer fullname, then email local-part, for a short personalized greeting."""
         if not user_data:
@@ -376,6 +400,11 @@ class IntentProcessor:
 
     def _build_greeting_response(self, user_data: Optional[Dict[str, Any]]) -> str:
         templates = RESPONSE_TEMPLATES["conversational"]
+        if self._is_customer_session(user_data):
+            business = self._business_display_name(user_data)
+            if business:
+                return templates["customer_greeting_named"].replace("{business}", business)
+            return templates["customer_greeting_anonymous"]
         display_name = self._greeting_display_name(user_data)
         if display_name:
             return templates["greeting_named"].replace("{name}", display_name)

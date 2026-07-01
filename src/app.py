@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from another_fastapi_jwt_auth import AuthJWT
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic_settings import BaseSettings
@@ -117,6 +118,16 @@ app = FastAPI(
 async def root_health():
     """Docker / load-balancer probe."""
     return {"status": "healthy", "service": settings.SERVICE_NAME}
+
+
+@app.get("/", include_in_schema=False)
+async def api_root():
+    return RedirectResponse(url="/docs")
+
+
+@app.get("/swagger", include_in_schema=False)
+async def swagger_redirect():
+    return RedirectResponse(url="/docs")
 
 
 # -----------------------------------------------------------

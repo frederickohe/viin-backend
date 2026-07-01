@@ -348,6 +348,20 @@ class AutobusNLUSystem:
         
         logger.info("Detected intent=%s missing=%s", intent, missing_slots)
 
+        merchant_id, _ = self._parse_merchant_scoped_user_id(user_id)
+        if merchant_id:
+            conversational_only = set(INTENT_CATEGORIES.get("conversational", []))
+            if intent not in conversational_only:
+                logger.info(
+                    "Customer session %s: overriding admin intent '%s' with business_conversation",
+                    user_id,
+                    intent,
+                )
+                intent = "business_conversation"
+                missing_slots = []
+                state.current_intent = ""
+                state.collected_slots = {}
+
         # Validate and merge slots
         validated_slots = self.slot_manager.validate_slots(intent, extracted_slots)
 
@@ -1291,6 +1305,16 @@ class AutobusNLUSystem:
         logger.info(f"Processing non-payment intent '{intent}' for user {user_id}")
 
         user_data = self._get_user_data(user_id)
+
+        # Public-site customers chat as ``<merchant_id>:<phone>`` — never run merchant admin flows.
+        if user_data and user_data.get("is_customer_session"):
+            if intent not in conversational_intents:
+                logger.info(
+                    "Customer session %s: redirecting admin intent '%s' to business_conversation",
+                    user_id,
+                    intent,
+                )
+                intent = "business_conversation"
         
         if intent in conversational_intents:
             msg = self._process_conversational_with_rag(
@@ -1826,6 +1850,8 @@ class AutobusNLUSystem:
                     "customer_phone": channel_user_id,
                     # Merchant account used for FKs, RAG tenant, products, orders.
                     "db_user_id": merchant.id,
+                    "merchant_id": merchant.id,
+                    "is_customer_session": True,
                     "email": merchant.email,
                     "fullname": merchant.fullname,
                     "company": merchant.company,

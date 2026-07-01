@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 from core.webhooks.dto.response.simple_chat_response import SimpleChatResponse
 from utilities.dbconfig import get_db
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
 import logging
 import os
 from core.user.model.User import User
@@ -55,6 +56,143 @@ def _payload_str(payload: dict, *keys: str) -> str:
     return ""
 
 
+def _merchant_display_name(user: User) -> str:
+    return (
+        user.company
+        or user.organization_workplace
+        or user.fullname
+        or user.id
+        or ""
+    ).strip()
+
+
+def _company_match_score(user: User, needle: str) -> int:
+    """Higher = better match for public company lookup."""
+    n = needle.lower()
+    fields = [
+        (user.company, 100),
+        (user.organization_workplace, 90),
+        (user.fullname, 80),
+    ]
+    best = 0
+    for raw, exact_weight in fields:
+        val = (raw or "").strip().lower()
+        if not val:
+            continue
+        if val == n:
+            best = max(best, exact_weight)
+        elif val.startswith(n):
+            best = max(best, exact_weight - 15)
+        elif n in val:
+            best = max(best, exact_weight - 35)
+    return best
+
+
+def _find_company_matches(db: Session, name: str, *, limit: int = 8) -> list[User]:
+    needle = name.strip().lower()
+    if len(needle) < 2:
+        return []
+
+    like = f"%{needle}%"
+    candidates = (
+        db.query(User)
+        .filter(
+            or_(
+                func.lower(User.company).like(like),
+                func.lower(User.organization_workplace).like(like),
+                func.lower(User.fullname).like(like),
+            )
+        )
+        .limit(50)
+        .all()
+    )
+    if not candidates:
+        return []
+
+    scored = [(u, _company_match_score(u, needle)) for u in candidates]
+    scored = [(u, s) for u, s in scored if s > 0]
+    scored.sort(key=lambda pair: (-pair[1], _merchant_display_name(pair[0]).lower()))
+
+    # Single clear winner: exact match on company name, or lone high-confidence hit.
+    if len(scored) == 1:
+        return [scored[0][0]]
+
+    top_score = scored[0][1]
+    second_score = scored[1][1] if len(scored) > 1 else 0
+    if top_score >= 100 and top_score - second_score >= 10:
+        return [scored[0][0]]
+    if top_score >= 90 and second_score < 70:
+        return [scored[0][0]]
+
+    return [u for u, _ in scored[:limit]]
+
+
+def _resolve_company_number(
+    db: Session,
+    *,
+    company_number: str = "",
+    company_name: str = "",
+) -> Tuple[str, Optional[str]]:
+    """
+    Resolve merchant ``users.id`` from an explicit id or a display name.
+    Returns (company_id, error_message).
+    """
+    comp = (company_number or "").strip()
+    if comp:
+        merchant = db.query(User).filter(User.id == comp).first()
+        if not merchant:
+            return "", f"Unknown company_number: no merchant user with id '{comp}'."
+        return comp, None
+
+    name = (company_name or "").strip()
+    if not name:
+        return "", "company_number or company_name is required."
+
+    matches = _find_company_matches(db, name)
+    if not matches:
+        return "", f"No business found matching '{name}'."
+    if len(matches) > 1:
+        labels = ", ".join(_merchant_display_name(u) for u in matches[:5])
+        return "", f"Multiple businesses match '{name}': {labels}. Please pick one from the list."
+    return matches[0].id, None
+
+
+@webhooks_routes.get("/company-lookup")
+def company_lookup(
+    name: str = Query(..., min_length=2, max_length=200),
+    db: Session = Depends(get_db),
+):
+    """Public helper for the marketing-site chatbot to validate a business name."""
+    query = name.strip()
+    matches = _find_company_matches(db, query)
+    if not matches:
+        return {"ok": False, "message": f"No business found matching '{query}'."}
+
+    options = [
+        {
+            "company_number": u.id,
+            "display_name": _merchant_display_name(u),
+        }
+        for u in matches
+    ]
+
+    if len(matches) == 1:
+        u = matches[0]
+        return {
+            "ok": True,
+            "company_number": u.id,
+            "display_name": _merchant_display_name(u),
+            "matches": options,
+        }
+
+    return {
+        "ok": True,
+        "requires_selection": True,
+        "message": f"Several businesses match '{query}'. Pick the one you mean.",
+        "matches": options,
+    }
+
+
 @webhooks_routes.post("/start-dialog")
 async def start_dialog(
     request: Request,
@@ -80,13 +218,23 @@ async def start_dialog(
     try:
         customer = _payload_str(payload, "customer_number", "customer_phone", "customer")
         company = _payload_str(payload, "company_number", "company_id", "merchant_id")
+        company_name = _payload_str(
+            payload, "company_name", "company", "business_name", "merchant_name"
+        )
         msg = _payload_str(payload, "message", "webhook_message", "text", "body")
 
-        if customer and company and msg:
-            logger.info("Detected simple chat request (customer_number + company_number + message)")
+        if customer and msg and (company or company_name):
+            resolved_company, company_err = _resolve_company_number(
+                db,
+                company_number=company,
+                company_name=company_name,
+            )
+            if company_err:
+                return SimpleChatResponse(message=company_err)
+            logger.info("Detected simple chat request (customer + company + message)")
             return await handle_simple_chat(
                 customer_number=customer,
-                company_number=company,
+                company_number=resolved_company,
                 message=msg,
                 db=db,
             )
