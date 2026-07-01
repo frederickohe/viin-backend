@@ -1,0 +1,2 @@
+# Force LF for shell scripts (VPS deploy)
+*.sh text eol=lf
