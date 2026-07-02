@@ -27,11 +27,11 @@ from sqlalchemy import create_engine
 
 # Build database URL from environment variables
 db_driver = os.environ.get('DB_DRIVER', 'postgresql+psycopg2')
-db_user = os.environ.get('PGUSER', 'autobusadmin')
-db_password = os.environ.get('PGPASSWORD', 'autobus098')
+db_user = os.environ.get('PGUSER', 'viinadmin')
+db_password = os.environ.get('PGPASSWORD', 'viin098')
 db_host = os.environ.get('PGHOST', 'db')
 db_port = os.environ.get('PGPORT', '5432')
-db_name = os.environ.get('PGDATABASE', 'autobus')
+db_name = os.environ.get('PGDATABASE', 'viin')
 
 url = f'{db_driver}://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
 
@@ -134,12 +134,12 @@ echo "Applying Alembic migrations (upgrade head)..."
 python -m alembic upgrade head 2>&1 | grep -v "INFO" || true
 
 # Start the application with gunicorn
-echo "Starting Autobus application..."
+echo "Starting Viin application..."
 exec gunicorn \
 	--bind 0.0.0.0:8000 \
 	--workers 4 \
 	--worker-class uvicorn.workers.UvicornWorker \
-	--name autobus \
+	--name viin \
 	--error-logfile - \
 	--access-logfile - \
 	--log-level info \

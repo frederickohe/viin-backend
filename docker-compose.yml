@@ -1,12 +1,12 @@
 services:
   db:
     image: postgres:15-alpine
-    container_name: autobus_db
+    container_name: viin_db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-autobusadmin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autobus098}
-      POSTGRES_DB: ${POSTGRES_DB:-autobus}
+      POSTGRES_USER: ${POSTGRES_USER:-viinadmin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-viin098}
+      POSTGRES_DB: ${POSTGRES_DB:-viin}
     ports:
       - "5432:5432"
     volumes:
@@ -17,15 +17,15 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - autobus_network
+      - viin_network
   
   redis:
     image: redis:7-alpine
-    container_name: autobus_redis
+    container_name: viin_redis
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: redis-server --requirepass ${REDIS_PASSWORD:-autobus098} --appendonly yes
+    command: redis-server --requirepass ${REDIS_PASSWORD:-viin098} --appendonly yes
     volumes:
       - redis_data:/data
     healthcheck:
@@ -34,15 +34,15 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - autobus_network
+      - viin_network
 
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: autobus_pgadmin
+    container_name: viin_pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@useautobus.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-autobus098}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@useviin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-viin098}
       PGADMIN_CONFIG_SERVER_MODE: 'True'
       PGADMIN_CONFIG_PROXY_X_FOR_COUNT: '1'
       PGADMIN_CONFIG_PROXY_X_PROTO_COUNT: '1'
@@ -54,30 +54,30 @@ services:
       db:
         condition: service_healthy
     networks:
-      - autobus_network
+      - viin_network
       - caddy
     volumes:
       - pgadmin_data:/var/lib/pgadmin
 
   portainer:
     image: portainer/portainer-ce:latest
-    container_name: autobus_portainer
+    container_name: viin_portainer
     restart: unless-stopped
-    command: --trusted-origin portainer.useautobus.com
+    command: --trusted-origin portainer.useviin.com
     ports:
       - "9443:9443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     networks:
-      - autobus_network
+      - viin_network
       - caddy
 
   backend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: autobus_backend
+    container_name: viin_backend
     restart: unless-stopped
     working_dir: /app
     command: bash startup.sh
@@ -87,22 +87,22 @@ services:
       # PostgreSQL Environment Variables (for config.py)
       PGHOST: ${PGHOST:-db}
       PGPORT: ${PGPORT:-5432}
-      PGUSER: ${PGUSER:-autobusadmin}
-      PGPASSWORD: ${PGPASSWORD:-autobus098}
-      PGDATABASE: ${PGDATABASE:-autobus}
+      PGUSER: ${PGUSER:-viinadmin}
+      PGPASSWORD: ${PGPASSWORD:-viin098}
+      PGDATABASE: ${PGDATABASE:-viin}
       
       # SQLAlchemy Database URL (legacy support)
-      SQLALCHEMY_DATABASE_URL: "postgresql://autobusadmin:autobus098@db:5432/autobus"
+      SQLALCHEMY_DATABASE_URL: "postgresql://viinadmin:viin098@db:5432/viin"
       
       # Redis Configuration
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-autobus098}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-viin098}
       
       # JWT Configuration (prefer JWT_SECRET_KEY from .env; default must be >= 32 bytes for HS256)
       SECRET_KEY: ${SECRET_KEY:-${JWT_SECRET_KEY:-09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7}}
       ALGORITHM: ${ALGORITHM:-HS256}
-      KID: ${KID:-autobus-kid}
+      KID: ${KID:-viin-kid}
       
       # Application Configuration
       DEBUG: ${DEBUG:-false}
@@ -125,7 +125,7 @@ services:
       USE_WIREPICK_API_KEY: ${USE_WIREPICK_API_KEY:-true}
       
       # Frontend and Other URLs
-      BASE_FRONTEND_URL: ${BASE_FRONTEND_URL:-https://useautobus.com}
+      BASE_FRONTEND_URL: ${BASE_FRONTEND_URL:-https://useviin.com}
       
       # OTP Configuration
       OTP_EXPIRE_MINUTES: ${OTP_EXPIRE_MINUTES:-5}
@@ -154,38 +154,10 @@ services:
       VEO_POLL_INTERVAL_SECONDS: ${VEO_POLL_INTERVAL_SECONDS:-10}
       VEO_MAX_POLL_SECONDS: ${VEO_MAX_POLL_SECONDS:-600}
 
-      BLOTATO_API_KEY: ${BLOTATO_API_KEY:-your_blotato_api_key_here}
-      BLOTATO_CLIENT_ID: ${BLOTATO_CLIENT_ID:-your_blotato_client_id_here}
-      BLOTATO_CLIENT_SECRET: ${BLOTATO_CLIENT_SECRET:-your_blotato_client_secret_here}
-      BLOTATO_REDIRECT_URI: ${BLOTATO_REDIRECT_URI:-https://api.useautobus.com/api/social/callback}
-
       CONTABO_ACCESS_KEY: ${CONTABO_ACCESS_KEY:-e59e33a21a72b214bfc6aeb3e2fcd711}
       CONTABO_SECRET_KEY: ${CONTABO_SECRET_KEY:-939a59165a7490c08e78311d26182118}
-      CONTABO_BUCKET: ${CONTABO_BUCKET:-autobus}
+      CONTABO_BUCKET: ${CONTABO_BUCKET:-viin}
       CONTABO_ENDPOINT: ${CONTABO_ENDPOINT:-https://usc1.contabostorage.com}
-
-      # Postiz (self-hosted) integration
-      # If Autobus shares a Docker network with Postiz, prefer service DNS:
-      #   POSTIZ_BASE_URL=http://postiz:5000
-      # If NOT sharing a Docker network, use host-mapped port (Docker Desktop):
-      #   POSTIZ_BASE_URL=http://host.docker.internal:4007
-      POSTIZ_BASE_URL: ${POSTIZ_BASE_URL:-http://postiz:5000}
-      # Browser-facing Postiz URL used in authorization links.
-      POSTIZ_PUBLIC_URL: ${POSTIZ_PUBLIC_URL:-https://postiz.useautobus.com}
-      # Postiz/Chatwoot LOCAL login: email + Autobus username (fullname), not the Autobus password.
-      # When true, enables POST /api/v1/integrations/provision-self-test (destructive upstream).
-      INTEGRATIONS_SELF_TEST_ENABLED: ${INTEGRATIONS_SELF_TEST_ENABLED:-false}
-      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
-
-      # Chatwoot (self-hosted) integration (optional)
-      # If shared network: CHATWOOT_BASE_URL=http://chatwoot_rails:3000
-      # If not shared network (Docker Desktop): CHATWOOT_BASE_URL=http://host.docker.internal:3000
-      CHATWOOT_BASE_URL: ${CHATWOOT_BASE_URL:-http://chatwoot_rails:3000}
-      CHATWOOT_PLATFORM_API_TOKEN: ${CHATWOOT_PLATFORM_API_TOKEN:-}
-      # Browser-facing Chatwoot URL for login / inbox setup links (falls back to CHATWOOT_BASE_URL in code if unset).
-      CHATWOOT_PUBLIC_URL: ${CHATWOOT_PUBLIC_URL:-https://chatwoot.useautobus.com}
-      # Optional: public origin of this API for Meta → Autobus webhook hints (WhatsApp channel-link response).
-      AUTOBUS_PUBLIC_API_URL: ${AUTOBUS_PUBLIC_API_URL:-https://api.useautobus.com}
 
       # Qdrant RAG stack: use `http://greenbrain_rag_api:8088` when backend joins `greenbrain_rag`
       # (see `networks` below). Otherwise use a host-reachable URL, e.g.
@@ -207,8 +179,8 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - autobus_network
-      # Shared platform network (Caddy, Postiz, Chatwoot, RAG API)
+      - viin_network
+      # Shared platform network (Caddy, RAG API)
       - caddy
       # RAG internal network (Qdrant, TEI, rag-api)
       - greenbrain_rag
@@ -224,7 +196,7 @@ volumes:
     driver: local
 
 networks:
-  autobus_network:
+  viin_network:
     driver: bridge
   caddy:
     external: true

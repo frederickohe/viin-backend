@@ -121,7 +121,7 @@ def send_human_message(
 ):
     """
     Records a human/agent message into the daily conversation history.
-    Delivery to external channels (WhatsApp/Chatwoot) can be performed by the calling app.
+    Delivery to external channels (e.g. WhatsApp) can be performed by the calling app.
     """
     user_id = authjwt.get_jwt_subject()
 

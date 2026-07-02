@@ -28,9 +28,6 @@ from core.nlu.controller.nlucontroller import nlu_routes
 from core.paystack.controller.paystack_controller import paystack_routes
 from core.agent.controller.agentcontroller import agent_routes
 from core.media.controller.media_controller import media_routes
-from core.socialmedia.controller.socialmedia_controller import social_routes
-from core.chatwoot.controller.chatwoot_controller import chatwoot_routes
-from core.integrations.controller.integration_test_controller import integration_routes
 from core.product.controller.product_controller import product_routes
 from core.orders.controller.order_controller import order_routes
 from core.interventions.controller.intervention_controller import intervention_routes
@@ -94,7 +91,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.SERVICE_NAME,
     version="1.0",
-    description="""**Autobus Core API** An AI focused app infrastructure deployed with python.
+    description="""**Viin Core API** An AI focused app infrastructure deployed with python.
 
     Default Endpoints:
     - Authentication
@@ -104,8 +101,8 @@ app = FastAPI(
     """,
     contact={
         "name": "API Support",
-        "url": "http://support@autobus.com",
-        "email": "mail@autobus.com",
+        "url": "http://support@viin.com",
+        "email": "mail@viin.com",
     },
     license_info={
         "name": "MIT",
@@ -167,9 +164,6 @@ app.include_router(nlu_routes, prefix="/api/v1/nlu", tags=["NLU Routes"])
 app.include_router(paystack_routes, prefix="/api/v1/paystack", tags=["Paystack Routes"])
 app.include_router(agent_routes, prefix="/api/v1/agent", tags=["Agent Routes"])
 app.include_router(media_routes, prefix="/api/v1/media", tags=["Media Generation"])
-app.include_router(social_routes, prefix="/api/v1/social", tags=["Social Media Routes"])
-app.include_router(chatwoot_routes, prefix="/api/v1/chatwoot", tags=["Chatwoot Routes"])
-app.include_router(integration_routes, prefix="/api/v1/integrations", tags=["Integrations (self-test)"])
 app.include_router(product_routes, prefix="/api/v1/products", tags=["Product Routes"])
 app.include_router(order_routes, prefix="/api/v1/orders", tags=["Order Routes"])
 app.include_router(intervention_routes, prefix="/api/v1/interventions", tags=["Interventions Routes"])

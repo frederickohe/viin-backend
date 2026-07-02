@@ -124,7 +124,7 @@ class OTPService:
             self.db.commit()
             self.db.refresh(otp_record)
 
-            subject = "Your Autobus verification code"
+            subject = "Your Viin verification code"
             body = f"Your verification code is: {otp_code}. Valid for {settings.OTP_EXPIRE_SECONDS} seconds."
 
             smtp_host = settings.ZEPTOMAIL_SMTP_HOST
@@ -132,7 +132,7 @@ class OTPService:
             smtp_username = settings.ZEPTOMAIL_SMTP_USERNAME
             smtp_password = settings.ZEPTOMAIL_SMTP_PASSWORD
 
-            sender_domain = os.getenv("ZEPTOMAIL_SENDER_DOMAIN", "useautobus.com").strip()
+            sender_domain = os.getenv("ZEPTOMAIL_SENDER_DOMAIN", "useviin.com").strip()
             from_email = settings.ZEPTOMAIL_FROM_EMAIL or f"no-reply@{sender_domain}"
 
             if not smtp_password:

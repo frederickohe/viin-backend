@@ -11,7 +11,7 @@ class Settings(BaseSettings):
         extra="ignore"  # Ignore extra fields from .env that aren't defined in the model
     )
     
-    SERVICE_NAME: str = "Autobus Backend"
+    SERVICE_NAME: str = "Viin Backend"
     DEBUG: bool = True
 
     # Database Configuration - supports both traditional and Docker Postgres env vars
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # JWT Configuration
     SECRET_KEY: str = os.environ.get('SECRET_KEY', os.environ.get('JWT_SECRET_KEY', 'green-secret-keeps-gamma'))
     ALGORITHM: str = os.environ.get('ALGORITHM', os.environ.get('JWT_ALGORITHM', 'HS256'))
-    KID: str = os.environ.get('KID', 'autobus-kid')
+    KID: str = os.environ.get('KID', 'viin-kid')
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 360
     
@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     WIREPICK_CLIENT_ID: str = os.environ.get("WIREPICK_CLIENT_ID", "").strip()
     WIREPICK_PASSWORD: str = os.environ.get("WIREPICK_PASSWORD", "").strip()
     WIREPICK_PUBLIC_KEY: str = os.environ.get("WIREPICK_PUBLIC_KEY", "").strip()
-    WIREPICK_SENDER_ID: str = os.environ.get("WIREPICK_SENDER_ID", "AutoBus").strip()
+    WIREPICK_SENDER_ID: str = os.environ.get("WIREPICK_SENDER_ID", "Viin").strip()
     USE_WIREPICK_API_KEY: bool = os.environ.get("USE_WIREPICK_API_KEY", "false").lower() == "true"
 
     # Email (SMTP) configuration (used for OTP email + agent email tool)
@@ -67,14 +67,6 @@ class Settings(BaseSettings):
         or ""
     ).strip()
     ZEPTOMAIL_FROM_EMAIL: str = os.environ.get("ZEPTOMAIL_FROM_EMAIL", "").strip()
-    
-    # Blotato Social Media Integration Configuration
-    BLOTATO_API_KEY: str = os.environ.get('BLOTATO_API_KEY', '')
-    BLOTATO_CLIENT_ID: str = os.environ.get('BLOTATO_CLIENT_ID', '')
-    BLOTATO_CLIENT_SECRET: str = os.environ.get('BLOTATO_CLIENT_SECRET', '')
-    BLOTATO_API_BASE: str = os.environ.get('BLOTATO_API_BASE', 'https://api.blotato.com')
-    BLOTATO_OAUTH_BASE: str = os.environ.get('BLOTATO_OAUTH_BASE', 'https://app.blotato.com')
-    
     # OTP Configuration
     # Default to 30 seconds (can override via env).
     OTP_EXPIRE_SECONDS: int = int(os.environ.get("OTP_EXPIRE_SECONDS", 30))

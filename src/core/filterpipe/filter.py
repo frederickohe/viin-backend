@@ -72,7 +72,7 @@ class FilterPipeline:
         return {"ok": True}
 
     def process(self, userid: str, message: str, context: Optional[str]) -> Dict[str, Any]:
-        """Run full filter pipeline and, if successful, dispatch to the Autobus agent.
+        """Run full filter pipeline and, if successful, dispatch to the Viin agent.
 
         Previously the webhooks controller was responsible for instantiating
         :class:`core.agent.agent.AutoBus` and invoking ``process_user_message``.

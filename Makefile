@@ -1,7 +1,7 @@
 .PHONY: help build up down logs restart clean test migrate
 
 help:
-	@echo "Autobus Docker Deployment - Available Commands"
+	@echo "Viin Docker Deployment - Available Commands"
 	@echo ""
 	@echo "  make build              Build Docker images"
 	@echo "  make up                 Start all services in background"
@@ -70,22 +70,22 @@ status:
 	@docker-compose ps
 	@echo ""
 	@echo "Health Checks:"
-	@docker exec autobus_backend curl -s http://localhost:8000/health 2>/dev/null || echo "Backend: Starting..."
-	@docker exec autobus_db pg_isready -U autobusadmin 2>/dev/null || echo "Database: Not ready"
-	@docker exec autobus_redis redis-cli -a autobus098 ping 2>/dev/null || echo "Redis: Not ready"
+	@docker exec viin_backend curl -s http://localhost:8000/health 2>/dev/null || echo "Backend: Starting..."
+	@docker exec viin_db pg_isready -U viinadmin 2>/dev/null || echo "Database: Not ready"
+	@docker exec viin_redis redis-cli -a viin098 ping 2>/dev/null || echo "Redis: Not ready"
 
 shell-backend:
-	docker exec -it autobus_backend bash
+	docker exec -it viin_backend bash
 
 shell-db:
-	docker exec -it autobus_db psql -U autobusadmin -d autobus
+	docker exec -it viin_db psql -U viinadmin -d viin
 
 shell-redis:
-	docker exec -it autobus_redis redis-cli -a autobus098
+	docker exec -it viin_redis redis-cli -a viin098
 
 test-db:
 	@echo "Testing PostgreSQL connection..."
-	docker exec autobus_backend python -c \
+	docker exec viin_backend python -c \
 		"from sqlalchemy import create_engine; from src.config import settings; \
 		print(f'Connecting to: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DATABASE}'); \
 		create_engine(settings.DB_URL_STRING).connect(); \
@@ -93,28 +93,28 @@ test-db:
 
 test-redis:
 	@echo "Testing Redis connection..."
-	docker exec autobus_redis redis-cli -a autobus098 ping
+	docker exec viin_redis redis-cli -a viin098 ping
 	@echo "✓ Redis connection successful"
 
 migrate-current:
 	@echo "Current migration status:"
-	docker exec autobus_backend alembic current
+	docker exec viin_backend alembic current
 
 migrate-history:
 	@echo "Migration history:"
-	docker exec autobus_backend alembic history --oneline
+	docker exec viin_backend alembic history --oneline
 
 db-backup:
 	@echo "Backing up PostgreSQL database..."
 	@mkdir -p ./backups
-	docker exec autobus_db pg_dump -U autobusadmin autobus > ./backups/autobus_$(shell date +%Y%m%d_%H%M%S).sql
+	docker exec viin_db pg_dump -U viinadmin viin > ./backups/viin_$(shell date +%Y%m%d_%H%M%S).sql
 	@echo "Backup complete: ./backups/"
 
 ps:
 	docker-compose ps
 
 stats:
-	docker stats autobus_backend autobus_db autobus_redis
+	docker stats viin_backend viin_db viin_redis
 
 pull-logs:
 	docker-compose logs --timestamps --follow

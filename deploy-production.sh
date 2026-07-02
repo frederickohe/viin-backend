@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Production Deployment Script for Autobus
+# Production Deployment Script for Viin
 # This script handles deployment with production best practices
 
 set -e  # Exit on error
@@ -11,7 +11,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}=== Autobus Production Deployment ===${NC}\n"
+echo -e "${GREEN}=== Viin Production Deployment ===${NC}\n"
 
 # Check prerequisites
 echo "Checking prerequisites..."
@@ -76,8 +76,8 @@ docker-compose build --no-cache
 # Create volumes if they don't exist
 echo ""
 echo "Ensuring volumes exist..."
-docker volume create autobus_postgres_data || true
-docker volume create autobus_redis_data || true
+docker volume create viin_postgres_data || true
+docker volume create viin_redis_data || true
 echo -e "${GREEN}✓ Volumes ready${NC}"
 
 # Start services
@@ -92,7 +92,7 @@ echo "Waiting for services to be healthy..."
 echo -n "Waiting for PostgreSQL..."
 TRIES=0
 while [ $TRIES -lt 30 ]; do
-    if docker exec autobus_db pg_isready -U autobusadmin -d autobus &> /dev/null; then
+    if docker exec viin_db pg_isready -U viinadmin -d viin &> /dev/null; then
         echo -e " ${GREEN}✓${NC}"
         break
     fi
@@ -110,7 +110,7 @@ fi
 echo -n "Waiting for Redis..."
 TRIES=0
 while [ $TRIES -lt 15 ]; do
-    if docker exec autobus_redis redis-cli -a "$(grep "^REDIS_PASSWORD=" .env | cut -d'=' -f2)" ping &> /dev/null; then
+    if docker exec viin_redis redis-cli -a "$(grep "^REDIS_PASSWORD=" .env | cut -d'=' -f2)" ping &> /dev/null; then
         echo -e " ${GREEN}✓${NC}"
         break
     fi
@@ -128,7 +128,7 @@ fi
 echo -n "Waiting for Backend..."
 TRIES=0
 while [ $TRIES -lt 60 ]; do
-    if docker exec autobus_backend curl -s http://localhost:8000/health &> /dev/null; then
+    if docker exec viin_backend curl -s http://localhost:8000/health &> /dev/null; then
         echo -e " ${GREEN}✓${NC}"
         break
     fi
@@ -153,13 +153,13 @@ echo -e "${GREEN}=== Deployment Complete ===${NC}"
 echo ""
 echo "Service endpoints:"
 echo "  Backend API: http://localhost:8000"
-echo "  PostgreSQL: localhost:5432 (user: autobusadmin)"
+echo "  PostgreSQL: localhost:5432 (user: viinadmin)"
 echo "  Redis: localhost:6379"
 echo ""
 echo "Useful commands:"
 echo "  View logs:        docker-compose logs -f"
-echo "  Database shell:   docker exec -it autobus_db psql -U autobusadmin -d autobus"
-echo "  Redis CLI:        docker exec -it autobus_redis redis-cli -a \$(grep REDIS_PASSWORD .env | cut -d= -f2)"
+echo "  Database shell:   docker exec -it viin_db psql -U viinadmin -d viin"
+echo "  Redis CLI:        docker exec -it viin_redis redis-cli -a \$(grep REDIS_PASSWORD .env | cut -d= -f2)"
 echo "  Stop services:    docker-compose down"
 echo ""
 echo -e "${GREEN}✓ Deployment successful!${NC}"

@@ -17,7 +17,7 @@ class ReceiptGenerator:
             os.makedirs(self.assets_dir)
             logger.warning(f"Created assets directory at: {self.assets_dir}")
 
-        self.logo = self._load_icon("autobus_logo.png")
+        self.logo = self._load_icon("viin_logo.png")
         self.success_icon = self._load_icon("success_icon.png")
         self.failed_icon = self._load_icon("failed_icon.png")
 
@@ -115,7 +115,7 @@ class ReceiptGenerator:
                 img.paste(logo_bg, (80, y), logo_bg)
             except Exception as e:
                 logger.warning(f"Error pasting logo: {str(e)}")
-                draw.text((80, y), "Autobus", font=bold_fnt, fill=dark)
+                draw.text((80, y), "Viin", font=bold_fnt, fill=dark)
 
         draw.text((WIDTH - 80, y + 20),
                   "Transaction Receipt",
@@ -259,7 +259,7 @@ class ReceiptGenerator:
         #   BOTTOM FOOTER TEXT
         # -----------------------------------------
         draw.text((WIDTH // 2, HEIGHT - 80),
-                  "This payment was made with Autobus",
+                  "This payment was made with Viin",
                   anchor="mm",
                   fill=label,
                   font=small_fnt)
@@ -311,7 +311,7 @@ class ReceiptGenerator:
                 logo_bg.paste(logo_resized, (0, 0), logo_resized)
                 img.paste(logo_bg, (80, y), logo_bg)
             except:
-                draw.text((80, y), "Autobus", font=bold_font, fill=black_text)
+                draw.text((80, y), "Viin", font=bold_font, fill=black_text)
 
         draw.text((width - 80, y + 20),
                   "Loan Receipt",
@@ -450,7 +450,7 @@ class ReceiptGenerator:
         #   BOTTOM FOOTER TEXT
         # -----------------------------------------
         draw.text((width // 2, height - 80),
-                  "Manage your loan in the Autobus app!",
+                  "Manage your loan in the Viin app!",
                   anchor="mm",
                   fill=gray_text,
                   font=small_font)

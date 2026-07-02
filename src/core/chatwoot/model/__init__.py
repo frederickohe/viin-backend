@@ -1,2 +1,0 @@
-from .ChatwootAccount import ChatwootAccount
-

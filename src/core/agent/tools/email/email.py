@@ -58,7 +58,7 @@ class EmailTool(BaseTool):
         super().__init__(**kwargs)
 
         # Initialize Redis and DB as before
-        redis_password = os.getenv('REDIS_PASSWORD', 'autobus098')
+        redis_password = os.getenv('REDIS_PASSWORD', 'viin098')
         self.redis_client = redis_client or redis.Redis(
             host=os.getenv('REDIS_HOST', 'redis'),
             port=int(os.getenv('REDIS_PORT', 6379)),
@@ -75,7 +75,7 @@ class EmailTool(BaseTool):
             'smtp_password': os.getenv('ZEPTOMAIL_SMTP_PASSWORD'),
             'sender_domain': os.getenv('ZEPTOMAIL_SENDER_DOMAIN', 'greenbraintech.com'),
             'api_key': os.getenv('EMAIL_PROVIDER_API_KEY'),
-            'default_from_domain': 'autobus.africa',
+            'default_from_domain': 'viin.africa',
             'tracking_enabled': True,
             'rate_limit_per_user': 100
         }

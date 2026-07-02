@@ -18,15 +18,15 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Lazy initialization - only create the agent when first needed
-_autobus_agent_instance = None
+_viin_agent_instance = None
 
-def get_autobus_agent():
-    """Lazy initialization of AutoBus agent. Only created on first use."""
-    global _autobus_agent_instance
-    if _autobus_agent_instance is None:
-        logger.info("Lazy initializing AutoBus agent on first use...")
-        _autobus_agent_instance = AutoBus()
-    return _autobus_agent_instance
+def get_viin_agent():
+    """Lazy initialization of agent. Only created on first use."""
+    global _viin_agent_instance
+    if _viin_agent_instance is None:
+        logger.info("Lazy initializing Viin agent on first use...")
+        _viin_agent_instance = AutoBus()
+    return _viin_agent_instance
 
 def validate_token(authjwt: AuthJWT = Depends()):
     try:
@@ -69,7 +69,7 @@ def agent(query: CommandRequest, db: Session = Depends(get_db)):
         if user:
             credit_service.require_credits(user.id, CreditType.LLM.value, 1.0, "agent_command")
 
-    assistant = get_autobus_agent()
+    assistant = get_viin_agent()
 
     response_text = assistant.process_user_message(
         userid=query.userid,

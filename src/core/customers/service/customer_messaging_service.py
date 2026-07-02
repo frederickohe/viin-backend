@@ -116,7 +116,7 @@ class CustomerMessagingService:
         if not settings.ZEPTOMAIL_SMTP_PASSWORD:
             raise ValueError("Email service is not configured")
 
-        sender_domain = os.getenv("ZEPTOMAIL_SENDER_DOMAIN", "useautobus.com").strip()
+        sender_domain = os.getenv("ZEPTOMAIL_SENDER_DOMAIN", "useviin.com").strip()
         from_email = settings.ZEPTOMAIL_FROM_EMAIL or f"no-reply@{sender_domain}"
 
         customers_by_id = {

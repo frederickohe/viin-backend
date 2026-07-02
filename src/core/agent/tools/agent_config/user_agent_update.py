@@ -14,7 +14,7 @@ def _sanitize_params(params: Dict[str, Any]) -> Dict[str, Any]:
     """Sanitize parameters by stripping whitespace from string values.
     
     This fixes issues where LLMs might introduce unintended spaces or newlines
-    in generated values (e.g., "noreply@useautobus. com" instead of "noreply@useautobus.com").
+    in generated values (e.g., "noreply@useviin. com" instead of "noreply@useviin.com").
     
     Args:
         params: Dictionary of parameters to sanitize

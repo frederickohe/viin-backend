@@ -232,7 +232,7 @@ def send_money_direct(
             "reference": reference,
             "service_id": "4892",
             "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "callback_url": "https://autobus-dcahe0a8cjecffcm.canadacentral-01.azurewebsites.netapi/api/v1/payment/callback",
+            "callback_url": "https://viin-dcahe0a8cjecffcm.canadacentral-01.azurewebsites.netapi/api/v1/payment/callback",
             "trans_type": "MTC"
         }
 
@@ -341,7 +341,7 @@ def pay_bill_direct(
             "reference": reference,
             "service_id": "4892",
             "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "callback_url": "https://autobus-dcahe0a8cjecffcm.canadacentral-01.azurewebsites.net/api/v1/payment/callback",
+            "callback_url": "https://viin-dcahe0a8cjecffcm.canadacentral-01.azurewebsites.net/api/v1/payment/callback",
             "trans_type": "BLP"
         }
 
@@ -466,7 +466,7 @@ def pay_external_bill_direct(
             "reference": reference,
             "service_id": "4892",
             "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "callback_url": "https://autobus-dcahe0a8cjecffcm.canadacentral-01.azurewebsites.net/api/v1/payment/callback",
+            "callback_url": "https://viin-dcahe0a8cjecffcm.canadacentral-01.azurewebsites.net/api/v1/payment/callback",
             "trans_type": "BLP",
             "ext_biller_ref_id": ext_biller_ref_id,  # Required for external billers
             "ext_biller_ref_type": ext_biller_ref_type  # Biller category/type

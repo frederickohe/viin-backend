@@ -140,7 +140,7 @@ class OrderInvoiceService:
         digits = re.sub(r"\D", "", phone)
         if not digits:
             return None
-        return f"pay.{digits}@billing.autobus.app"
+        return f"pay.{digits}@billing.viin.app"
 
     @staticmethod
     def _order_item_summary(order: Order) -> str:
