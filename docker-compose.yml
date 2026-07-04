@@ -59,20 +59,6 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
 
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: viin_portainer
-    restart: unless-stopped
-    command: --trusted-origin portainer.viin.app
-    ports:
-      - "9443:9443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    networks:
-      - viin_network
-      - caddy
-
   backend:
     build:
       context: .
@@ -187,8 +173,6 @@ volumes:
   redis_data:
     driver: local
   pgadmin_data:
-    driver: local
-  portainer_data:
     driver: local
 
 networks:
