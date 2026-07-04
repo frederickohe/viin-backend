@@ -7,10 +7,7 @@ from core.agent.dto.commandreqeust import CommandRequest
 from utilities.dbconfig import SessionLocal
 from core.agent.agent import AutoBus
 from core.agent.dto.media_generation_request import MediaGenerationRequest
-from core.credits.model.credit_types import CreditType
-from core.credits.service.credit_service import CreditService
 from core.media.controller.media_controller import generate_image, generate_video
-from core.user.service.user_service import UserService
 from core.media.dto.media_generation_response import ImageGenerationResponse, VideoGenerationResponse
 import logging
 
@@ -60,15 +57,6 @@ agent_routes = APIRouter()
 
 @agent_routes.post("/command")
 def agent(query: CommandRequest, db: Session = Depends(get_db)):
-    credit_service = CreditService(db)
-    user_id = credit_service.resolve_user_id(query.userid)
-    if user_id:
-        credit_service.require_credits(user_id, CreditType.LLM.value, 1.0, "agent_command")
-    else:
-        user = UserService(db).get_user_by_phone(query.userid)
-        if user:
-            credit_service.require_credits(user.id, CreditType.LLM.value, 1.0, "agent_command")
-
     assistant = get_viin_agent()
 
     response_text = assistant.process_user_message(

@@ -6,8 +6,6 @@ integrating with the existing LLMClient while supporting LangChain's agent and t
 
 import logging
 from typing import Dict, List, Any, Optional
-from langchain_openai import ChatOpenAI
-from langchain.schema import BaseMessage, HumanMessage, SystemMessage, AIMessage
 import os
 from dotenv import load_dotenv
 from core.nlu.config import GROQ_API_KEY, GROQ_BASE_URL, MODEL
@@ -43,6 +41,25 @@ class LangChainOpenAIWrapper:
             max_tokens: Maximum tokens for responses, default 2096
             api_key: Groq API key (defaults to GROQ_API_KEY env var)
         """
+        try:
+            from langchain_openai import ChatOpenAI  # type: ignore
+            from langchain.schema import (  # type: ignore
+                HumanMessage,
+                SystemMessage,
+                AIMessage,
+            )
+        except Exception as e:  # pragma: no cover
+            raise ImportError(
+                "LangChain is not installed. This wrapper is optional; "
+                "either install `langchain-openai`/`langchain` or switch to the non-LangChain LLM client."
+            ) from e
+
+        # Bind imported types to instance for later use
+        self._ChatOpenAI = ChatOpenAI
+        self._HumanMessage = HumanMessage
+        self._SystemMessage = SystemMessage
+        self._AIMessage = AIMessage
+
         self.model_name = model_name
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -51,7 +68,7 @@ class LangChainOpenAIWrapper:
         self.api_key = api_key or GROQ_API_KEY or os.getenv("GROQ_API_KEY")
         
         # Initialize LangChain via Groq's OpenAI-compatible endpoint
-        self.llm = ChatOpenAI(
+        self.llm = self._ChatOpenAI(
             model_name=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -88,7 +105,7 @@ class LangChainOpenAIWrapper:
         """
         try:
             # Create a message
-            messages = [HumanMessage(content=prompt)]
+            messages = [self._HumanMessage(content=prompt)]
             
             # Get response
             response = self.llm(messages)
@@ -122,7 +139,7 @@ class LangChainOpenAIWrapper:
             
             # Add system prompt if provided
             if system_prompt:
-                langchain_messages.append(SystemMessage(content=system_prompt))
+                langchain_messages.append(self._SystemMessage(content=system_prompt))
             
             # Add conversation messages
             for msg in messages:
@@ -130,11 +147,11 @@ class LangChainOpenAIWrapper:
                 content = msg.get("content", "")
                 
                 if role == "system":
-                    langchain_messages.append(SystemMessage(content=content))
+                    langchain_messages.append(self._SystemMessage(content=content))
                 elif role == "assistant":
-                    langchain_messages.append(AIMessage(content=content))
+                    langchain_messages.append(self._AIMessage(content=content))
                 else:  # user or default
-                    langchain_messages.append(HumanMessage(content=content))
+                    langchain_messages.append(self._HumanMessage(content=content))
             
             # Get response
             response = self.llm(langchain_messages)

@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional
 import json
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
-from langchain.tools import BaseTool
+from core.agent.tools.base_tool import BaseTool
 import logging
 
 from core.agent.tools.agent_config.user_agent_config_service import AgentConfigService

@@ -4,8 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from core.agent.dto.media_generation_request import MediaGenerationRequest
-from core.credits.model.credit_types import CreditType
-from core.credits.service.credit_service import CreditService
 from core.user.controller.usercontroller import get_db, validate_token
 from another_fastapi_jwt_auth import AuthJWT
 from core.agent.tools.google_image.google_image_service import (
@@ -28,24 +26,6 @@ logger = logging.getLogger(__name__)
 media_routes = APIRouter()
 
 
-def _deduct_media_credit(
-    db: Session,
-    credit_type: str,
-    operation: str,
-    authjwt: AuthJWT | None,
-    req_user_id: str | None,
-) -> None:
-    credit_service = CreditService(db)
-    user_id = None
-    if authjwt:
-        user_id = credit_service.resolve_user_id(authjwt.get_jwt_subject())
-    if not user_id and req_user_id:
-        user_id = credit_service.resolve_user_id(req_user_id)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required for media generation.")
-    credit_service.require_credits(user_id, credit_type, 1.0, operation)
-
-
 @media_routes.post("/generate-image", response_model=ImageGenerationResponse)
 async def generate_image(
     req: MediaGenerationRequest,
@@ -56,7 +36,6 @@ async def generate_image(
     Generate an image via Google Generative Language API (Nana Banana / Gemini image model).
     Uses GOOGLE_API_KEY, NANA_BANANA_BASE_URL, and NANA_BANANA_MODEL from the environment.
     """
-    _deduct_media_credit(db, CreditType.IMAGE_GEN.value, "image_generation", authjwt, req.user_id)
     try:
         service = GoogleImageService()
         b64 = await service.generate_image_base64(req.prompt, user_id=req.user_id)
@@ -85,7 +64,6 @@ async def generate_video(
     Generate a video via Google Veo (Generative Language API).
     By default returns the direct Google video URL. Set store=true to also persist on Contabo.
     """
-    _deduct_media_credit(db, CreditType.VIDEO_GEN.value, "video_generation", authjwt, req.user_id)
     try:
         service = GoogleVeoService()
         if store:

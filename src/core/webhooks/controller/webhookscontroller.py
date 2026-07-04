@@ -334,14 +334,14 @@ async def handle_simple_chat(
                 return SimpleChatResponse(
                     message="Unknown company_number: no merchant user with that id."
                 )
-            nlu_user_id = f"{comp}:{cust}"
+            nlu_user_id = f"{comp}:{normalize_ghana_phone_number(cust)}"
             logger.info(
                 "Processing simple chat (scoped) company=%s customer=%s",
                 comp,
                 cust[:32],
             )
         else:
-            nlu_user_id = cust
+            nlu_user_id = normalize_ghana_phone_number(cust)
             logger.info("Processing simple chat (legacy key) customer=%s", cust[:32])
 
         nlu_system = AutobusNLUSystem(db_session=db)
@@ -464,8 +464,9 @@ def handle_text_message(message: dict, phone: str, phone_id: str, db: Session):
     message_text = text_data.get("body")
     logger.info(f"Extracted text message: {message_text}")
 
-    # Check if user exists in database
-    existing_user = db.query(User).filter(User.phone == phone).first()
+    from core.user.service.user_service import UserService
+
+    existing_user = UserService(db).find_user_by_phone(phone)
     whatsapp_service = WhatsAppService()
 
     if not existing_user:
@@ -502,7 +503,7 @@ def handle_text_message(message: dict, phone: str, phone_id: str, db: Session):
 
         # Process the message
         response_message = nlu_system.process_message(
-                phone,
+                normalize_ghana_phone_number(phone),
                 message_text
         )
 

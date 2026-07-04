@@ -6,6 +6,8 @@ class ResponseFormatter:
         """Format responses in a friendly business assistant style"""
         
         if message_type == "missing_slots":
+            if intent == "add_task":
+                return kwargs.get("prompt", "I need a bit more information to save this task.")
             return f"{kwargs.get('message', 'I would need a few more details to complete the task,')} {kwargs.get('prompt', '')}"
         
         elif message_type == "confirm_action":

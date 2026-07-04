@@ -1,5 +1,6 @@
 from typing import Dict, List, Any, Optional
 from core.nlu.config import INTENTS
+from core.memory.service.task_intent_service import normalize_schedule_type
 
 _PLACEHOLDER_ORDER_ITEM_NAMES = frozenset(
     {
@@ -52,6 +53,9 @@ class SlotManager:
     
     def get_missing_slots(self, intent: str, current_slots: Dict) -> List[str]:
         """Get list of missing required slots for an intent"""
+        if intent == "add_task":
+            return self._missing_add_task_slots(current_slots)
+
         if intent not in self.intents:
             return []
         
@@ -85,6 +89,18 @@ class SlotManager:
             iname = validated_slots.get("item_name")
             if iname and is_placeholder_order_item_name(str(iname)):
                 validated_slots.pop("item_name", None)
+
+        if intent == "add_task":
+            schedule = normalize_schedule_type(validated_slots.get("schedule_type"))
+            if schedule:
+                validated_slots["schedule_type"] = schedule
+            freq = (validated_slots.get("repeat_frequency") or "").strip().lower()
+            if freq in ("daily", "day"):
+                validated_slots["repeat_frequency"] = "daily"
+            elif freq in ("weekly", "week"):
+                validated_slots["repeat_frequency"] = "weekly"
+            elif freq in ("monthly", "month"):
+                validated_slots["repeat_frequency"] = "monthly"
 
         return validated_slots
     
@@ -158,12 +174,49 @@ class SlotManager:
             "new_customer_name": "What should the new customer name be?",
             "customer_number": "Customer mobile number?",
             "airtime_receiver_name": "What is the name of the person receiving the airtime?",
+            "task_body": "What is the task? Describe what you need to do.",
+            "schedule_type": (
+                "Should this task have a deadline, repeat on a schedule, or stay open with no date?\n"
+                "Reply with one of:\n"
+                "• open — no deadline\n"
+                "• deadline — due once at a specific date/time\n"
+                "• recurring — repeats daily, weekly, or monthly at a set time"
+            ),
+            "due_at": "When is it due? Give a date and time (e.g. tomorrow at 3pm, or 2026-07-10 14:00).",
+            "repeat_frequency": "How often should it repeat? (daily, weekly, or monthly)",
+            "repeat_time": "What time should it repeat each cycle? (e.g. 8am, 5:30pm)",
         }
 
         if slot in slot_descriptions:
             return slot_descriptions[slot]
         label = format_slot_label(slot)
         return f"What is the {label.lower()}?"
+
+    def _missing_add_task_slots(self, current_slots: Dict) -> List[str]:
+        """Collect task slots one step at a time based on schedule choice."""
+        if not (current_slots.get("task_body") or "").strip():
+            return ["task_body"]
+
+        schedule = normalize_schedule_type(current_slots.get("schedule_type"))
+        if not schedule:
+            return ["schedule_type"]
+
+        if schedule == "deadline":
+            if not (current_slots.get("due_at") or "").strip():
+                return ["due_at"]
+            return []
+
+        if schedule == "recurring":
+            if not (current_slots.get("repeat_frequency") or "").strip():
+                return ["repeat_frequency"]
+            if not (current_slots.get("repeat_time") or "").strip():
+                return ["repeat_time"]
+            return []
+
+        if schedule == "open":
+            return []
+
+        return ["schedule_type"]
 
     def generate_slot_prompt(self, intent: str, missing_slots: List[str]) -> str:
         """Generate natural language prompt for missing slots with intent-aware context"""

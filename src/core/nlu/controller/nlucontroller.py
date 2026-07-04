@@ -7,8 +7,6 @@ from core.auth.service.authservice import AuthService
 from core.nlu.dto.reponse.nluresponse import NLUResponse
 from core.nlu.nlu import AutobusNLUSystem
 from core.nlu.dto.request.nlurequest import NLURequest
-from core.credits.model.credit_types import CreditType
-from core.credits.service.credit_service import CreditService
 from core.subscription.service.subscription_service import SubscriptionService
 from core.user.service.user_service import UserService
 from utilities.dbconfig import SessionLocal
@@ -47,22 +45,6 @@ async def process_message(
         subscription_service = SubscriptionService(db)
 
         result = subscription_service.get_user_subscription_status_by_phone(request.phone)
-
-        credit_service = CreditService(db)
-        if not credit_service.has_credits(current_user.id, CreditType.LLM.value):
-            raise HTTPException(
-                status_code=402,
-                detail={
-                    "message": "Insufficient LLM Chats credits. Please upgrade your plan.",
-                    "credit_type": CreditType.LLM.value,
-                },
-            )
-        credit_service.check_and_deduct(
-            current_user.id,
-            CreditType.LLM.value,
-            1.0,
-            "nlu_message",
-        )
 
         logger.info(f"Processing message for user {current_user.username}: {request.message}")
         

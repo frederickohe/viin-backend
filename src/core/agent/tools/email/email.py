@@ -11,7 +11,7 @@ import asyncio
 from pathlib import Path
 import logging
 from pydantic import BaseModel, Field
-from langchain.tools import BaseTool
+from core.agent.tools.base_tool import BaseTool
 
 # Setup logging
 logger = logging.getLogger(__name__)

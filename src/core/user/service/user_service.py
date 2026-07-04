@@ -7,8 +7,10 @@ from core.auth.service.sessiondriver import SessionDriver, TokenData
 from another_fastapi_jwt_auth import AuthJWT
 from core.exceptions import *
 from utilities.dbconfig import SessionLocal
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from core.user.model.User import User
+from utilities.phone_utils import convert_to_local_ghana_format, normalize_ghana_phone_number
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
@@ -98,9 +100,36 @@ class UserService:
             updated_at=user.updated_at
         )
 
+    def find_user_by_phone(self, phone: str) -> Optional[User]:
+        """Resolve a user by phone or WhatsApp id, trying common Ghana formats."""
+        if not phone or not str(phone).strip():
+            return None
+
+        candidates: list[str] = []
+        seen: set[str] = set()
+        for raw in (
+            str(phone).strip(),
+            normalize_ghana_phone_number(phone),
+            convert_to_local_ghana_format(phone),
+        ):
+            if not raw or raw in seen:
+                continue
+            seen.add(raw)
+            candidates.append(raw)
+
+        for candidate in candidates:
+            user = (
+                self.db.query(User)
+                .filter(or_(User.phone == candidate, User.whatsapp_number == candidate))
+                .first()
+            )
+            if user:
+                return user
+        return None
+
     # get user by phone number
     def get_user_by_phone(self, phone: str) -> UserResponse:
-        user = self.db.query(User).filter(User.phone == phone).first()
+        user = self.find_user_by_phone(phone)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         return UserResponse(

@@ -86,71 +86,6 @@ INTENTS = {
         "required_slots": ["prompt"],
         "category": "video_generation"
     },
-    #==== PRODUCT MANAGEMENT AGENT INTENTS =====
-    "add_product": {
-        "description": "Add a new product to the inventory",
-        "slots": ["product_name", "price", "quantity","condition","category","description","photo","photos","link"],
-        "required_slots": ["product_name", "price", "quantity","condition","category","description"],
-        "category": "product_management"
-    },
-    "update_product": {
-        "description": "Update details of an existing product",
-        "slots": ["product_id", "product_name", "price", "quantity","condition","category","description","photo","photos","link"],
-        "required_slots": ["product_id", "product_name", "price", "quantity","condition","category","description"],
-        "category": "product_management"
-    },
-    "delete_product": {
-        "description": "Delete a product from the inventory",
-        "slots": ["product_id"],
-        "required_slots": ["product_id"],
-        "category": "product_management"
-    },
-    "view_products": {
-        "description": "View all products in a products inventory",
-        "slots": [],
-        "required_slots": [],
-        "category": "product_management"
-    },
-    "view_product": {
-        "description": "View details of a specific product",
-        "slots": ["product_id"],
-        "required_slots": ["product_id"],
-        "category": "product_management"
-    },
-    #==== ORDER MANAGEMENT AGENT INTENTS =====
-    "create_order": {
-        "description": "Create a new order (minimal: item_name and quantity; customer_phone defaults from the messaging user id; pricing may be added later)",
-        "slots": [
-            "customer_name",
-            "customer_phone",
-            "item_name",
-            "quantity",
-            "unit_price",
-            "subtotal_amount",
-            "discount_amount",
-            "tax_amount",
-            "shipping_amount",
-            "currency_code",
-            "customer_email",
-            "customer_location",
-            "order_type",
-            "order_source",
-        ],
-        "required_slots": ["item_name", "quantity"],
-        "category": "order_management"
-    },
-    "update_order": {
-        "description": "Update details of an existing order",
-        "slots": ["order_id", "customer_name", "item_name", "quantity"],
-        "required_slots": ["order_id"],
-        "category": "order_management"
-    },
-    "send_order_invoice": {
-        "description": "Generate a Paystack payment link for an order and send the invoice to the customer's chat",
-        "slots": ["order_id", "order_number", "customer_email"],
-        "required_slots": [],
-        "category": "order_management"
-    },
     #==== FINANCIAL TIPS AGENT INTENTS =====
     "financial_tips": {
         "description": "Provide general financial advice and tips",
@@ -175,20 +110,6 @@ INTENTS = {
         "slots": ["risk_tolerance", "investment_amount", "time_horizon"],
         "required_slots": [],
         "category": "financial_tips"
-    },
-    
-    # ===== TRANSACTIONAL INTENTS =====
-    "send_money": {
-        "description": "Send money to another person",
-        "slots": ["recipient", "amount", "network", "reference", "customer_name"],
-        "required_slots": ["recipient", "amount", "reference"],
-        "category": "transactional"
-    },
-    "pay_bill": {
-        "description": "Pay utility bills",
-        "slots": ["bill_type", "account_number", "amount", "provider"],
-        "required_slots": ["bill_type", "account_number", "amount"],
-        "category": "transactional"
     },
     
     # ===== USER PROFILE MANAGEMENT INTENTS =====
@@ -216,22 +137,36 @@ INTENTS = {
         "required_slots": [],
         "category": "user_management"
     },
+
+    # ===== TASK / BRIEFING INTENTS =====
+    "daily_briefing": {
+        "description": "Give a daily briefing of the user's todos and reminders, listing the most pressing items first",
+        "slots": [],
+        "required_slots": [],
+        "category": "task_management"
+    },
+    "weekly_briefing": {
+        "description": "Give a weekly briefing of the user's todos and reminders for the next 7 days, listing the most pressing items first",
+        "slots": [],
+        "required_slots": [],
+        "category": "task_management"
+    },
+    "add_task": {
+        "description": "Add a new task, todo, or reminder for the user",
+        "slots": [
+            "task_body",
+            "schedule_type",
+            "due_at",
+            "repeat_frequency",
+            "repeat_time",
+        ],
+        "required_slots": ["task_body", "schedule_type"],
+        "category": "task_management"
+    },
     
     # ===== SYSTEM INTENTS =====
     "intent_not_clear": {
         "description": "Intent could not be determined from the message",
-        "slots": [],
-        "required_slots": [],
-        "category": "system"
-    },
-    "request_intervention": {
-        "description": "User requests a human agent / support intervention",
-        "slots": ["reason"],
-        "required_slots": [],
-        "category": "system"
-    },
-    "end_intervention": {
-        "description": "User indicates they no longer need a human agent and want the bot to continue",
         "slots": [],
         "required_slots": [],
         "category": "system"
@@ -242,24 +177,35 @@ INTENTS = {
 # Shown in chat prompts: never answer as the software vendor/platform.
 VENDOR_EXCLUSION_RULES = """
 - You represent the customer's organization (see Organization context), not the software platform or its vendor.
-- Never describe Autobus, Greenbrain, or any underlying platform unless that exact information appears in Retrieved memory for this tenant.
-- For questions about "your company", "we", or "our business", use only Organization context and Retrieved memory. If neither contains the answer, say you do not have that information yet and suggest adding business documents to the knowledge base.
+- Never describe Autobus, Greenbrain, or any underlying platform unless that exact information appears in Organization context.
+- For questions about "your company", "we", or "our business", use only Organization context. If it does not contain the answer, say you do not have that information yet.
 """
 
 # Enhanced System Prompts by Category
 SYSTEM_PROMPTS = {
     "conversational": """
-    You are an expert AI-powered assistant for the customer's organization.
-    Through natural interactions (text, voice, and image messages), help with business operations
-    and financial management for that organization only.
+    You are an advanced AI task assistant for the customer's organization.
+    Help users accomplish concrete goals through clear, efficient conversation — across business
+    operations, financial management, and day-to-day work for that organization only.
 
-    Capabilities you may help with when relevant: conversational assistance, email, media generation,
-    products, orders, customer profiles, business information, and customer support — always scoped
-    to the tenant organization.
+    ## How you work
+    - Treat every message as a task or step toward a goal. Identify what the user wants done, not just what they said.
+    - For simple requests: answer directly and move on.
+    - For multi-step or ambiguous requests: briefly confirm the goal, break work into clear steps, and ask only the questions needed to proceed.
+    - Carry context across the conversation: remember what was already decided, completed, or still pending.
+    - When a task needs a capability outside this chat (e.g. sending email, generating media, payments), explain what is needed and guide the user to phrase the request so the system can route it — do not pretend you already performed external actions.
+    - Prefer actionable replies: what you understood, what you recommend or did in chat, and the single best next step when helpful.
+    - When users ask for a daily or weekly briefing of their todos, guide them to ask explicitly (e.g. "give me my daily briefing") so the system can list pending items with the most pressing first.
+    - When users want to add a task, todo, or reminder, guide them to say so explicitly (e.g. "add a task", "remind me to…") so the system can collect schedule details.
 
-    CRUCIAL RESPONSE GUIDELINES:
-    - Be warm, engaging, and natural.
-    - Keep responses short and to the point.
+    ## Capabilities (when relevant)
+    Conversational assistance, email, media generation, daily/weekly to-do briefings,
+    customer support context, financial tips, and profile updates — always scoped to the tenant organization.
+
+    ## Response style
+    - Be warm, professional, and direct.
+    - Keep replies concise unless the user asks for detail or the task requires a structured plan.
+    - Use short lists or numbered steps when breaking down work.
     {vendor_rules}
 
     Organization context:
@@ -364,15 +310,15 @@ SYSTEM_PROMPTS = {
 RESPONSE_TEMPLATES = {
     "conversational": {
         # Greeting copy is resolved in IntentProcessor (name vs anonymous); keys are templates only.
-        "greeting_named": "Welcome back, {name}! What task are we handling today?",
-        "greeting_anonymous": "Welcome back! What task are we handling today?",
+        "greeting_named": "Welcome back, {name}! What would you like to get done today?",
+        "greeting_anonymous": "Welcome back! What would you like to get done today?",
         "customer_greeting_named": "Hi! Welcome to {business}. How can we help you today?",
         "customer_greeting_anonymous": "Hi! How can we help you today?",
         "customer_goodbye": "Thanks for reaching out! Feel free to message us anytime.",
         "normal_conversation": "{response}",
         "business_conversation": "{response}",
         "small_talk": "{response}",
-        "goodbye": "Goodbye! 👋 Feel free to reach out if you need help with your business operations."
+        "goodbye": "All set for now. Come back anytime you have a task to work through."
     },
     
     "email": {
@@ -395,24 +341,6 @@ RESPONSE_TEMPLATES = {
         "error": "I apologize, but I couldn't generate the video. Please try again with a different prompt."
     },
     
-    "product_management": {
-        "add_product": "✅ Product '{product_name}' has been added to inventory. Price: {price}, Quantity: {quantity}",
-        "update_product": "✅ Product '{product_name}' (ID: {product_id}) has been updated successfully.",
-        "delete_product": "✅ Product (ID: {product_id}) has been removed from inventory.",
-        "view_products": "Here are all products in your inventory: {products_list}",
-        "view_product": "📦 Product Details:\n{product_details}",
-        "missing_slots": "I'd be happy to help with product management. Please provide: {missing_slots}",
-        "error": "I apologize, but I encountered an error. Please try again."
-    },
-    
-    "order_management": {
-        "create_order": "✅ Order created successfully!\nCustomer: {customer_name}\nItem: {item_name}\nQuantity: {quantity}\nOrder ID: {order_id}",
-        "update_order": "✅ Order (ID: {order_id}) has been updated successfully.",
-        "send_order_invoice": "✅ Invoice with Paystack payment link sent for order {order_number}.",
-        "missing_slots": "I'd be happy to help with order management. Please provide: {missing_slots}",
-        "error": "I apologize, but I encountered an error processing your order. Please try again."
-    },
-    
     "financial_tips": {
         "financial_tips": "💡 {response}",
         "budgeting_advice": "📊 Budgeting Tip: {response}",
@@ -426,21 +354,16 @@ RESPONSE_TEMPLATES = {
         "error": "I apologize, but I couldn't generate the expense report. Please try again."
     },
 
-    "transactional": {
-        "missing_slots": "I'd be happy to help you {intent}. I just need a few more details: {missing_slots}",
-        "confirm_action": "Great! I'm ready to {intent}. Please confirm with your PIN to proceed.",
-        "error": "I apologize, but I'm having trouble processing your request. Please try again.",
-        "success": "Your {intent} has been processed successfully! {details}"
-    },
-    "customers": {
-        "add_customer": "The customer {customer_name} has been added successfully.",
-        "view_customers": "Here are your saved customers: {customers_list}",
-        "delete_customer": "The customer {customer_name} has been removed successfully.",
-        "update_customer": "The customer {customer_name} has been updated successfully."
-    },
     "system": {
-        "intent_not_clear": "I'm not quite sure what you're asking. Could you please rephrase or provide more details? I can help you with: sending money, buying airtime, paying bills, tracking expenses, managing customers, or getting financial tips."
+        "intent_not_clear": "I want to help you get this done — could you tell me a bit more about what you're trying to accomplish? I can assist with tasks like adding todos or reminders, email, media generation, financial tips, daily or weekly to-do briefings, and profile updates."
     },
+    "task_management": {
+        "daily_briefing": "{response}",
+        "weekly_briefing": "{response}",
+        "add_task": "{response}",
+        "error": "I couldn't complete that task action right now. Please try again in a moment."
+    },
+
     "user_management": {
         "update_user_details": "Your profile information has been updated successfully.",
         "update_username": "Your username has been updated to '{new_username}' successfully! ✅",
@@ -458,12 +381,9 @@ INTENT_CATEGORIES = {
     "email": ["send_email", "read_emails", "update_sender_email"],
     "image_generation": ["generate_image"],
     "video_generation": ["generate_video"],
-    "product_management": ["add_product", "update_product", "delete_product", "view_products", "view_product"],
-    "order_management": ["create_order", "update_order", "send_order_invoice"],
     "financial_tips": ["financial_tips", "budgeting_advice", "savings_tips", "investment_advice", "debt_management"],
-    "transactional": ["send_money", "buy_airtime", "pay_bill", "check_balance", "get_loan", "track_expenses", "set_budget"],
     "expense_report": ["expense_report", "generate_expense_report", "monthly_expense_summary",  "annual_expense_report", "daily_expense_report","transaction_info"],
-    "customers": ["add_customer", "view_customers", "delete_customer", "update_customer"],
     "user_management": ["update_user_details", "update_username", "update_phone_number", "view_user_profile"],
-    "system": ["intent_not_clear", "request_intervention", "end_intervention"]
+    "task_management": ["daily_briefing", "weekly_briefing", "add_task"],
+    "system": ["intent_not_clear"]
 }

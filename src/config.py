@@ -44,7 +44,6 @@ class Settings(BaseSettings):
     SMS_MQ_QUEUE: str = os.environ.get('SMS_MQ_QUEUE', '')
     EMAIL_MQ_QUEUE: str = os.environ.get('EMAIL_MQ_QUEUE', '')
     BASE_FRONTEND_URL: str = os.environ.get('BASE_FRONTEND_URL', 'http://localhost:3000')
-    BATCH_CUSTOMER_UPLOAD_QUEUE: str = os.environ.get('BATCH_CUSTOMER_UPLOAD_QUEUE', '')
     COMPANY_QUEUE: str = os.environ.get('COMPANY_QUEUE', '')
 
     # Wirepick SMS Configuration

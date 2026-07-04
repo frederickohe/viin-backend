@@ -252,6 +252,25 @@ class IntentDetector:
         - "this month" → "MONTH_1"
         - "all" → "ALL_TIME"
         - "over the last 6 months" → "MONTH_6"
+
+        TASK BRIEFING:
+        - Requests for a daily task/todo summary → daily_briefing
+        - Examples: "daily briefing", "what are my tasks for today", "my todos today", "what do I need to do today", "what's most urgent"
+        - Requests for a weekly task/todo summary → weekly_briefing
+        - Examples: "weekly briefing", "tasks this week", "what's on my plate this week", "my week ahead"
+
+        ADD TASK (slot collection — keep intent add_task until all required slots are filled):
+        - User wants to create a task, todo, or reminder → add_task
+        - Examples: "add a task", "remind me to call John", "create a todo", "add to my list"
+        - Slots:
+          • task_body — what needs to be done (required)
+          • schedule_type — open | deadline | recurring (required)
+          • due_at — required when schedule_type is deadline (date/time)
+          • repeat_frequency — required when schedule_type is recurring (daily, weekly, monthly)
+          • repeat_time — required when schedule_type is recurring (time of day, e.g. 8am)
+        - If the user gives task + schedule in one message, extract all applicable slots.
+        - If continuing add_task, keep intent add_task and only fill missing slots from the latest message.
+        - schedule_type values: use "open" for no date, "deadline" for one-time due date, "recurring" for repeating tasks.
         """
         
         current_intent_context = f"CURRENT_INTENT: {current_intent if current_intent else 'Intent Extraction'}"
@@ -355,6 +374,36 @@ class IntentDetector:
         User starts new intent: "I want to check my balance"
         INTENT: check_balance
         SLOTS: {{}}
+        MISSING:
+
+        User starts add_task: "Add a task to buy groceries"
+        INTENT: add_task
+        SLOTS: {{"task_body": "buy groceries"}}
+        MISSING: schedule_type
+
+        User continues add_task: "deadline"
+        INTENT: add_task
+        SLOTS: {{"schedule_type": "deadline"}}
+        MISSING: due_at
+
+        User continues add_task: "tomorrow at 3pm"
+        INTENT: add_task
+        SLOTS: {{"due_at": "tomorrow at 3pm"}}
+        MISSING:
+
+        User starts add_task with full deadline: "Remind me to submit the report on Friday at 10am"
+        INTENT: add_task
+        SLOTS: {{"task_body": "submit the report", "schedule_type": "deadline", "due_at": "Friday at 10am"}}
+        MISSING:
+
+        User starts recurring task: "Remind me every day at 8am to take medicine"
+        INTENT: add_task
+        SLOTS: {{"task_body": "take medicine", "schedule_type": "recurring", "repeat_frequency": "daily", "repeat_time": "8am"}}
+        MISSING:
+
+        User starts open task: "Add task: call the supplier — no deadline"
+        INTENT: add_task
+        SLOTS: {{"task_body": "call the supplier", "schedule_type": "open"}}
         MISSING:
         Examples end.
 

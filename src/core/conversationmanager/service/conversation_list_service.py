@@ -9,8 +9,6 @@ from core.conversationmanager.dto.conversation_response_dto import (
     ConversationDetailDTO,
     ConversationSummaryDTO,
 )
-from core.interventions.model.Intervention import Intervention
-from core.orders.model.order import Order
 from core.nlu.model.Conversation import DailyConversation
 from core.user.model.User import User
 
@@ -83,48 +81,18 @@ class ConversationListService:
             return [], []
 
         completed_rows = self._query_completed(access, skip=skip, limit=limit).all()
-        intervention_rows = self._query_intervention_active(
-            access, skip=skip, limit=limit
-        ).all()
 
-        user_keys = {row.user_id for row in completed_rows} | {
-            row.user_id for row in intervention_rows
-        }
+        user_keys = {row.user_id for row in completed_rows}
         user_names, user_phones = self._load_user_display_fields(user_keys)
 
         completed = [self._to_summary(row, user_names, user_phones) for row in completed_rows]
-        intervention_active = [
-            self._to_summary(row, user_names, user_phones) for row in intervention_rows
-        ]
-        return completed, intervention_active
+        return completed, []
 
     def _query_completed(self, access_filter, skip: int, limit: int):
-        """Sessions not in human intervention (history / all-chats list).
-
-        Previously this required conversation_lifecycle == completed, which hid
-        sessions that left intervention while still bot-active.
-        """
-        intervention_flag = DailyConversation.conversation_state[
-            "intervention_active"
-        ].as_boolean()
+        """Sessions for history / all-chats list."""
         return (
             self.db.query(DailyConversation)
-            .filter(
-                access_filter,
-                func.coalesce(intervention_flag, False).is_(False),
-            )
-            .order_by(DailyConversation.updated_at.desc())
-            .offset(skip)
-            .limit(limit)
-        )
-
-    def _query_intervention_active(self, access_filter, skip: int, limit: int):
-        return (
-            self.db.query(DailyConversation)
-            .filter(
-                access_filter,
-                DailyConversation.conversation_state["intervention_active"].as_boolean().is_(True),
-            )
+            .filter(access_filter)
             .order_by(DailyConversation.updated_at.desc())
             .offset(skip)
             .limit(limit)
@@ -275,40 +243,6 @@ class ConversationListService:
         user_names = self._load_user_fullnames({row.user_id})
         return self._to_detail(row, user_names)
 
-    def get_conversation_for_order(
-        self, merchant_user_id: str, order_id: str
-    ) -> Optional[ConversationDetailDTO]:
-        """Load the most recent conversation for the order's customer."""
-        try:
-            order_uuid = uuid.UUID(str(order_id))
-        except ValueError:
-            return None
-        order = self.db.query(Order).filter(Order.order_id == order_uuid).first()
-        if not order:
-            return None
-        if order.user_id and str(order.user_id) != str(merchant_user_id):
-            return None
-
-        customer_key = (order.customer_phone or order.customer_id or "").strip()
-        if not customer_key:
-            return None
-
-        candidates = {customer_key}
-        normalized = self._normalize_phone_like(customer_key)
-        if normalized:
-            candidates.add(normalized)
-
-        row = (
-            self.db.query(DailyConversation)
-            .filter(DailyConversation.user_id.in_(list(candidates)))
-            .order_by(DailyConversation.updated_at.desc())
-            .first()
-        )
-        if not row:
-            return None
-        user_names = self._load_user_fullnames({row.user_id})
-        return self._to_detail(row, user_names)
-
     def _to_detail(
         self, row: DailyConversation, user_names: Dict[str, str]
     ) -> ConversationDetailDTO:
@@ -355,38 +289,6 @@ class ConversationListService:
         if len(history) > 20:
             history = history[-20:]
         state["conversation_history"] = history
-        row.conversation_state = state
-        row.updated_at = datetime.utcnow()
-        self.db.commit()
-        self.db.refresh(row)
-
-        user_names = self._load_user_fullnames({row.user_id})
-        return self._to_detail(row, user_names)
-
-    def deactivate_intervention_for_session(
-        self, user_identifier: str, session_id: int
-    ) -> Optional[ConversationDetailDTO]:
-        """Turn off intervention mode for a stored conversation session."""
-        row = self._session_owned_by_user(session_id, user_identifier)
-        if not row:
-            return None
-
-        state = dict(row.conversation_state or {})
-        intervention_id = state.get("intervention_id")
-        if intervention_id is not None:
-            intervention = (
-                self.db.query(Intervention)
-                .filter(Intervention.id == int(intervention_id))
-                .first()
-            )
-            if intervention and intervention.status == "open":
-                intervention.status = "closed"
-                intervention.closed_at = datetime.utcnow()
-
-        state["intervention_active"] = False
-        state["intervention_id"] = None
-        state["intervention_trigger"] = None
-        state["intervention_reason"] = None
         row.conversation_state = state
         row.updated_at = datetime.utcnow()
         self.db.commit()

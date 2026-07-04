@@ -51,6 +51,16 @@ class AuthService:
 
     def create_user(self, request: BaseModel):
         """Create a new user in the database."""
+        # Ensure all ORM models are imported/registered before first query.
+        # Without this, SQLAlchemy may attempt to resolve relationship targets
+        # (e.g. "Transaction") and fall back to SQLAlchemy's internal classes,
+        # resulting in `UnmappedClassError` and a 500 on first auth call.
+        try:
+            import utilities.dbmodels  # noqa: F401
+        except Exception:
+            # Non-fatal; will fail later with a clearer SQLAlchemy error if models truly broken.
+            pass
+
         existing_user = (
             self.db.query(User)
             .filter(

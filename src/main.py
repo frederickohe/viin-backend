@@ -7,5 +7,7 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=3090,
-        reload=settings.DEBUG
+        reload=False,
+        access_log=True,
+        log_level="debug",
     )

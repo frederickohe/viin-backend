@@ -7,7 +7,6 @@ in the user's agent config stored in `User.agents`.
 AGENT_REQUIRED_PARAMS = {
     "config_agent": [],
     "email_agent": ["sender_email"],
-    "products_agent": [],
     "chatbot_agent": [],
     "image_generation_agent": [],
     "video_generation_agent": [],
