@@ -41,7 +41,7 @@ services:
     container_name: viin_pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@useviin.com}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@viin.app}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-viin098}
       PGADMIN_CONFIG_SERVER_MODE: 'True'
       PGADMIN_CONFIG_PROXY_X_FOR_COUNT: '1'
@@ -63,7 +63,7 @@ services:
     image: portainer/portainer-ce:latest
     container_name: viin_portainer
     restart: unless-stopped
-    command: --trusted-origin portainer.useviin.com
+    command: --trusted-origin portainer.viin.app
     ports:
       - "9443:9443"
     volumes:
@@ -124,7 +124,7 @@ services:
       USE_WIREPICK_API_KEY: ${USE_WIREPICK_API_KEY:-true}
       
       # Frontend and Other URLs
-      BASE_FRONTEND_URL: ${BASE_FRONTEND_URL:-https://useviin.com}
+      BASE_FRONTEND_URL: ${BASE_FRONTEND_URL:-https://viin.app}
       
       # OTP Configuration
       OTP_EXPIRE_MINUTES: ${OTP_EXPIRE_MINUTES:-5}
@@ -179,10 +179,7 @@ services:
         condition: service_healthy
     networks:
       - viin_network
-      # Shared platform network (Caddy, RAG API)
       - caddy
-      # RAG internal network (Qdrant, TEI, rag-api)
-      - greenbrain_rag
 
 volumes:
   postgres_data:
@@ -200,6 +197,3 @@ networks:
   caddy:
     external: true
     name: caddy
-  greenbrain_rag:
-    external: true
-    name: greenbrain_rag

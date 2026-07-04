@@ -132,7 +132,7 @@ class OTPService:
             smtp_username = settings.ZEPTOMAIL_SMTP_USERNAME
             smtp_password = settings.ZEPTOMAIL_SMTP_PASSWORD
 
-            sender_domain = os.getenv("ZEPTOMAIL_SENDER_DOMAIN", "useviin.com").strip()
+            sender_domain = os.getenv("ZEPTOMAIL_SENDER_DOMAIN", "viin.app").strip()
             from_email = settings.ZEPTOMAIL_FROM_EMAIL or f"no-reply@{sender_domain}"
 
             if not smtp_password:

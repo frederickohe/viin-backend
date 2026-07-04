@@ -19,5 +19,5 @@ jobs:
           command_timeout: 30m
           script: |
             set -e
-            cd /var/www/viin
-            NEEDS_CADDY_NET=true NEEDS_RAG_NET=true bash scripts/deploy.sh
+            cd /var/www/viin-backend
+            NEEDS_CADDY_NET=true bash scripts/deploy.sh
