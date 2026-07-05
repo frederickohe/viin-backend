@@ -29,6 +29,12 @@ from core.user.dto.request.notification_settings_update_request import (
 from core.user.dto.request.profile_image_update_request import ProfileImageUpdateRequest
 from core.user.dto.request.agent_update_request import AgentUpdateRequest
 from core.user.dto.response.user_agents_response import UserAgentsResponse
+from core.user.dto.response.chat_channels_response import (
+    ChatChannelDisconnectResponse,
+    ChatChannelsResponse,
+    TelegramChannelStatus,
+)
+from core.nlu.service.account_access import get_telegram_chat_id, unbind_telegram_chat
 from core.agent.agent_params import AGENT_REQUIRED_PARAMS
 from core.agent.tools.agent_config.user_agent_config_service import AgentConfigService
 from core.notification.service.notification_service import NotificationService
@@ -273,6 +279,40 @@ def get_my_agents(
         agents=user.agents or {},
         available_agents=list(AGENT_REQUIRED_PARAMS.keys()),
     )
+
+
+@user_routes.get("/me/chat-channels", response_model=ChatChannelsResponse)
+def get_my_chat_channels(
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    current_user_email = authjwt.get_jwt_subject()
+    user_service = UserService(db)
+    user = user_service.get_current_user(current_user_email)
+    chat_id = get_telegram_chat_id(user)
+    return ChatChannelsResponse(
+        telegram=TelegramChannelStatus(
+            connected=bool(chat_id),
+            chat_id=chat_id,
+        ),
+    )
+
+
+@user_routes.delete(
+    "/me/chat-channels/telegram",
+    response_model=ChatChannelDisconnectResponse,
+)
+def disconnect_my_telegram_chat(
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    current_user_email = authjwt.get_jwt_subject()
+    user_service = UserService(db)
+    user = user_service.get_current_user(current_user_email)
+    disconnected = unbind_telegram_chat(db, user)
+    if not disconnected:
+        raise HTTPException(status_code=404, detail="Telegram is not connected to your account")
+    return ChatChannelDisconnectResponse(message="Telegram disconnected from your Viin account")
 
 
 @user_routes.patch("/me/agents/{agent_name}", response_model=UserAgentsResponse)

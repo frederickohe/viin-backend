@@ -9,11 +9,15 @@ from sqlalchemy.orm import Session
 from core.nlu.nlu import AutobusNLUSystem
 from core.nlu.service.account_access import (
     extract_phone_from_message,
+    find_user_by_telegram_chat_id,
     friendly_account_required_message,
     is_telegram_link_attempt,
     resolve_telegram_user,
     telegram_link_instruction_message,
     telegram_link_success_message,
+    telegram_not_linked_message,
+    telegram_unlink_success_message,
+    unbind_telegram_chat,
 )
 from core.nlu.service.message_delivery import send_telegram_nlu_response
 from core.nlu.service.process_message_result import ProcessMessageResult
@@ -45,18 +49,21 @@ _TELEGRAM_COMMAND_MESSAGES = {
         "• /weekly — this week's overview\n"
         "• /monthly — this month's overview\n"
         "• /addtask — add a task\n"
+        "• /unlink — disconnect this chat from your Viin account\n"
         "• /help — full list of capabilities"
     ),
     "/help": (
         "Here's what I can help with:\n\n"
         "📋 Tasks & reminders\n"
-        "• Add tasks with or without a due date\n"
-        "• Daily, weekly, or monthly briefings\n"
-        "• Check what was due yesterday\n\n"
-        "🔗 Connect your account\n"
-        "• Send: link 0247291736 (use the phone on your Viin account)\n\n"
-        "💬 General help\n"
-        "• Answer questions about your pending to-dos\n\n"
+        "• /addtask — add a task with or without a due date\n"
+        "• /briefing — today's tasks and overdue items\n"
+        "• /weekly — this week's overview\n"
+        "• /monthly — this month's overview\n"
+        "• /yesterday — what was due yesterday\n\n"
+        "🔗 Account\n"
+        "• /link — connect this chat to your Viin phone number\n"
+        "• /unlink — disconnect this chat from your Viin account\n\n"
+        "💬 Or just chat naturally\n"
         "Try: \"remind me to call John tomorrow at 3pm\" or \"what do I need to do today?\""
     ),
     "/link": (
@@ -72,6 +79,9 @@ _TELEGRAM_COMMAND_MESSAGES = {
     "/missed": "Was there something I needed to do yesterday?",
     "/addtask": "I want to add a new task.",
 }
+
+# Info-only commands — reply directly without NLU.
+_TELEGRAM_STATIC_COMMANDS = frozenset({"/start", "/help", "/link"})
 
 
 def _verify_telegram_secret(
@@ -136,6 +146,15 @@ async def telegram_webhook(
         return {"ok": True}
 
     command_key = text.split()[0].split("@")[0].lower() if text.startswith("/") else ""
+    if command_key == "/unlink":
+        return await _handle_unlink(
+            chat_id=chat_id,
+            telegram_service=telegram_service,
+            db=db,
+        )
+    if command_key in _TELEGRAM_STATIC_COMMANDS:
+        telegram_service.send_message(chat_id, _TELEGRAM_COMMAND_MESSAGES[command_key])
+        return {"ok": True}
     if command_key in _TELEGRAM_COMMAND_MESSAGES:
         text = _TELEGRAM_COMMAND_MESSAGES[command_key]
 
@@ -144,8 +163,28 @@ async def telegram_webhook(
         text=text,
         telegram_service=telegram_service,
         db=db,
-        guest_ok=command_key in ("/start", "/help", "/link"),
     )
+
+
+async def _handle_unlink(
+    *,
+    chat_id: int | str,
+    telegram_service: TelegramService,
+    db: Session,
+) -> dict:
+    user = find_user_by_telegram_chat_id(db, str(chat_id))
+    if not user:
+        telegram_service.send_message(chat_id, telegram_not_linked_message())
+        return {"ok": True}
+
+    nlu_system = AutobusNLUSystem(db_session=db)
+    unbind_telegram_chat(
+        db,
+        user,
+        conversation_manager=nlu_system.conversation_manager,
+    )
+    telegram_service.send_message(chat_id, telegram_unlink_success_message())
+    return {"ok": True}
 
 
 async def _handle_phone_link(

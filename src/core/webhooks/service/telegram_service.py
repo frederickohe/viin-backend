@@ -11,6 +11,7 @@ VIIN_BOT_COMMANDS: list[dict[str, str]] = [
     {"command": "start", "description": "Start chatting with Viin"},
     {"command": "help", "description": "See what Viin can do"},
     {"command": "link", "description": "Connect your Viin phone number"},
+    {"command": "unlink", "description": "Disconnect this chat from Viin"},
     {"command": "briefing", "description": "Today's tasks and overdue items"},
     {"command": "weekly", "description": "Tasks and reminders for this week"},
     {"command": "monthly", "description": "Overview for the rest of this month"},

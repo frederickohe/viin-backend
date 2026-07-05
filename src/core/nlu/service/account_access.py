@@ -154,6 +154,63 @@ def bind_telegram_chat(db: Session, user: User, chat_id: str) -> None:
     db.refresh(user)
 
 
+def get_telegram_chat_id(user: User) -> Optional[str]:
+    stored = (user.agents or {}).get(_TELEGRAM_AGENT, {}).get("chat_id")
+    if stored is None:
+        return None
+    chat_id = str(stored).strip()
+    return chat_id or None
+
+
+def _clear_telegram_link_state(
+    conversation_manager: Optional["ConversationManager"],
+    chat_id: str,
+) -> None:
+    if conversation_manager is None or not chat_id:
+        return
+    nlu_user_id = f"tg:{chat_id}"
+    state = conversation_manager.get_conversation_state(nlu_user_id)
+    state.viin_linked_phone = None
+    state.viin_linked_user_id = None
+    conversation_manager._save_conversation_state(state)
+
+
+def unbind_telegram_chat(
+    db: Session,
+    user: User,
+    *,
+    conversation_manager: Optional["ConversationManager"] = None,
+) -> bool:
+    chat_id = get_telegram_chat_id(user)
+    if not chat_id:
+        return False
+
+    user.remove_agent(_TELEGRAM_AGENT)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    _clear_telegram_link_state(conversation_manager, chat_id)
+    return True
+
+
+def telegram_unlink_success_message() -> str:
+    return (
+        "This Telegram chat is no longer connected to your Viin account.\n\n"
+        "To use Viin here again, send:\n"
+        "link 0247291736\n"
+        "(use the phone number on your Viin account)"
+    )
+
+
+def telegram_not_linked_message() -> str:
+    return (
+        "This chat isn't connected to a Viin account right now.\n\n"
+        "To connect, send:\n"
+        "link 0247291736\n"
+        "(use the phone number on your Viin account)"
+    )
+
+
 def telegram_link_success_message(user: User) -> str:
     first_name = (user.fullname or "").split()[0] if user.fullname else "there"
     display_phone = convert_to_local_ghana_format(user.phone or "") or user.phone or "your account"
