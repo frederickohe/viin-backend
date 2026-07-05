@@ -230,3 +230,62 @@ class WhatsAppService:
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Response content: {e.response.text}")
             return False
+
+    def upload_audio_media(self, phone_id: str, audio_bytes: bytes, mime_type: str = "audio/mpeg") -> Optional[str]:
+        """Upload audio bytes to WhatsApp Cloud API and return the media ID."""
+        url = f"{self.base_url}/{phone_id}/media"
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        filename = "briefing.mp3" if mime_type == "audio/mpeg" else "briefing.audio"
+
+        try:
+            files = {"file": (filename, audio_bytes, mime_type)}
+            data = {"messaging_product": "whatsapp", "type": mime_type}
+            logger.info("Uploading WhatsApp audio media (%s bytes)", len(audio_bytes))
+            response = requests.post(url, headers=headers, data=data, files=files, timeout=60)
+            response.raise_for_status()
+            media_id = response.json().get("id")
+            if not media_id:
+                logger.error("WhatsApp media upload returned no id: %s", response.text)
+                return None
+            return media_id
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to upload WhatsApp audio media: {e}")
+            if hasattr(e, "response") and e.response is not None:
+                logger.error(f"Response content: {e.response.text}")
+            return None
+
+    def send_audio(
+        self,
+        phone_id: str,
+        recipient_phone: str,
+        audio_bytes: bytes,
+        mime_type: str = "audio/mpeg",
+    ) -> bool:
+        """Send an audio message via WhatsApp Cloud API."""
+        media_id = self.upload_audio_media(phone_id, audio_bytes, mime_type=mime_type)
+        if not media_id:
+            return False
+
+        url = f"{self.base_url}/{phone_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": recipient_phone,
+            "type": "audio",
+            "audio": {"id": media_id},
+        }
+
+        try:
+            logger.info(f"Sending WhatsApp audio message to {recipient_phone}")
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            logger.info("WhatsApp audio sent successfully: %s", response.json())
+            return True
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to send WhatsApp audio: {e}")
+            if hasattr(e, "response") and e.response is not None:
+                logger.error(f"Response content: {e.response.text}")
+            return False

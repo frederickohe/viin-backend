@@ -202,7 +202,14 @@ class SlotManager:
                 "• deadline — due once at a specific date/time\n"
                 "• recurring — repeats daily, weekly, or monthly at a set time"
             ),
-            "due_at": "When is it due? Give a date and time (e.g. in 5 minutes, tomorrow at 3pm, or 2026-07-10 14:00).",
+            "due_at": (
+                "When is it due? You can say things like:\n"
+                "• in 5 minutes / in 2 hours / in 3 days\n"
+                "• today or tomorrow at 3pm\n"
+                "• Friday, this Friday, coming Friday, or next Thursday\n"
+                "• next week / next month\n"
+                "• 2026-07-10 14:00"
+            ),
             "repeat_frequency": "How often should it repeat? (daily, weekly, or monthly)",
             "repeat_time": "What time should it repeat each cycle? (e.g. 8am, 5:30pm)",
         }

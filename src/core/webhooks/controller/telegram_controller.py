@@ -15,6 +15,9 @@ from core.nlu.service.account_access import (
     telegram_link_instruction_message,
     telegram_link_success_message,
 )
+from core.nlu.service.message_delivery import send_telegram_nlu_response
+from core.nlu.service.process_message_result import ProcessMessageResult
+from core.nlu.service.slot_manager import SlotManager
 from core.webhooks.service.telegram_service import TelegramService
 from utilities.dbconfig import get_db
 from utilities.phone_utils import normalize_ghana_phone_number
@@ -39,6 +42,8 @@ _TELEGRAM_COMMAND_MESSAGES = {
         "(use your actual Viin phone number)\n\n"
         "Tap the menu button (☰) to see commands, or try:\n"
         "• /briefing — today's tasks\n"
+        "• /weekly — this week's overview\n"
+        "• /monthly — this month's overview\n"
         "• /addtask — add a task\n"
         "• /help — full list of capabilities"
     ),
@@ -46,7 +51,7 @@ _TELEGRAM_COMMAND_MESSAGES = {
         "Here's what I can help with:\n\n"
         "📋 Tasks & reminders\n"
         "• Add tasks with or without a due date\n"
-        "• Daily or weekly briefings\n"
+        "• Daily, weekly, or monthly briefings\n"
         "• Check what was due yesterday\n\n"
         "🔗 Connect your account\n"
         "• Send: link 0247291736 (use the phone on your Viin account)\n\n"
@@ -61,6 +66,8 @@ _TELEGRAM_COMMAND_MESSAGES = {
     ),
     "/briefing": "What do I need to do today? Give me my daily briefing.",
     "/tasks": "What do I need to do today? Give me my daily briefing.",
+    "/weekly": "Give me my weekly briefing. What do I need to focus on this week?",
+    "/monthly": "Give me my monthly overview. What do I need to focus on this month?",
     "/yesterday": "Was there something I needed to do yesterday?",
     "/missed": "Was there something I needed to do yesterday?",
     "/addtask": "I want to add a new task.",
@@ -171,6 +178,16 @@ async def _handle_phone_link(
     return {"ok": True}
 
 
+def _telegram_due_date_markup(nlu_system: AutobusNLUSystem, nlu_user_id: str) -> Optional[dict]:
+    state = nlu_system.conversation_manager.get_conversation_state(nlu_user_id)
+    if state.current_intent != "add_task":
+        return None
+    missing = SlotManager().get_missing_slots("add_task", state.collected_slots)
+    if missing != ["due_at"]:
+        return None
+    return TelegramService.build_due_date_keyboard()
+
+
 async def _handle_text_message(
     *,
     chat_id: int | str,
@@ -192,21 +209,30 @@ async def _handle_text_message(
         )
 
         if link_attempt and registered:
-            response_message = telegram_link_success_message(registered)
+            nlu_result = ProcessMessageResult(text=telegram_link_success_message(registered))
         elif link_attempt and not registered:
-            response_message = friendly_account_required_message(
-                "telegram", phone=link_phone
+            nlu_result = ProcessMessageResult(
+                text=friendly_account_required_message("telegram", phone=link_phone)
             )
         elif not registered and not guest_ok:
-            response_message = telegram_link_instruction_message()
+            nlu_result = ProcessMessageResult(text=telegram_link_instruction_message())
         else:
             if registered:
                 nlu_system.set_telegram_context_user(registered)
-            response_message = nlu_system.process_message(nlu_user_id, text)
+            nlu_result = nlu_system.process_message(nlu_user_id, text)
 
         logger.info("Generated Telegram response for %s", nlu_user_id)
 
-        if not telegram_service.send_message(chat_id, response_message):
+        reply_markup = None
+        if registered or guest_ok:
+            reply_markup = _telegram_due_date_markup(nlu_system, nlu_user_id)
+
+        if not send_telegram_nlu_response(
+            telegram_service,
+            chat_id=chat_id,
+            result=nlu_result,
+            reply_markup=reply_markup,
+        ):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to send Telegram message",
@@ -238,6 +264,9 @@ async def _handle_callback_query(
         return {"ok": True}
 
     if data:
+        callback_id = callback_query.get("id")
+        if callback_id:
+            telegram_service.answer_callback_query(callback_id)
         return await _handle_text_message(
             chat_id=chat_id,
             text=data,

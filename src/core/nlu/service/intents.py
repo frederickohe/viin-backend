@@ -197,6 +197,7 @@ class IntentDetector:
         - If user corrects or modifies previous information: KEEP SAME INTENT  
         - If user asks clarifying questions about current task: KEEP SAME INTENT
         - Only switch intent for completely new, unrelated user text
+        - PAYMENT OVERRIDE: If the message includes send/pay/transfer + an amount (e.g. "send 2 cedis to Anna"), ALWAYS use make_payment — never normal_conversation or business_conversation, even when continuing a chat.
         
         TIME PERIOD EXTRACTION GUIDANCE:
         When extracting the "time_period" slot, use one of these standardized codes:
@@ -228,6 +229,8 @@ class IntentDetector:
         - Examples: "was there something to do yesterday", "what did I miss yesterday", "anything due yesterday", "what was due last day"
         - Requests for a weekly task/todo summary → weekly_briefing
         - Examples: "weekly briefing", "tasks this week", "what's on my plate this week", "my week ahead"
+        - Requests for a monthly task/todo summary → monthly_briefing
+        - Examples: "monthly briefing", "monthly overview", "tasks this month", "what's due this month", "my month ahead"
 
         ADD TASK (slot collection — keep intent add_task until all required slots are filled):
         - User wants to create a task, todo, or reminder → add_task

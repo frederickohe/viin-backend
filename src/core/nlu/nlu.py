@@ -22,6 +22,8 @@ from core.nlu.service.intents import IntentDetector
 from core.nlu.service.slot_manager import SlotManager
 from core.nlu.service.conversation_manager import ConversationManager
 from core.nlu.service.intent_handler_result import IntentHandlerResult
+from core.nlu.service.process_message_result import ProcessMessageResult
+from core.nlu.service.payment_command_parser import try_parse_payment_command
 from core.nlu.service.security import SecurityManager
 from core.nlu.service.date_selection_manager import DateSelectionManager, DateOption
 from core.nlu.service.account_access import (
@@ -59,6 +61,15 @@ class AutobusNLUSystem:
         self.date_selection_manager = DateSelectionManager()
         self.db_session = db_session
         self._telegram_context_user: Optional[User] = None
+        self._tts_client = None
+
+    @property
+    def tts_client(self):
+        if self._tts_client is None:
+            from core.tts.tts_client import TTSClient
+
+            self._tts_client = TTSClient()
+        return self._tts_client
 
     def set_telegram_context_user(self, user: Optional[User]) -> None:
         """Reuse the Telegram user resolved by the webhook layer for this request."""
@@ -118,10 +129,19 @@ class AutobusNLUSystem:
         follow = "\n\nIs there anything else I can help you with?"
         return f"{(success_message or '').strip()}{follow}"
 
-    def _terminal_listener_apply(self, user_id: str, outcome: IntentHandlerResult) -> str:
+    def _terminal_listener_apply(self, user_id: str, outcome: IntentHandlerResult) -> ProcessMessageResult:
         if outcome.http_status == 200:
-            return self._conversation_completion_tool(user_id, outcome.message)
-        return outcome.message
+            msg = self._conversation_completion_tool(user_id, outcome.message)
+            return ProcessMessageResult(
+                text=msg,
+                audio_bytes=outcome.audio_bytes,
+                audio_mime_type=outcome.audio_mime_type,
+            )
+        return ProcessMessageResult(text=outcome.message)
+
+    @staticmethod
+    def _as_result(message: str) -> ProcessMessageResult:
+        return ProcessMessageResult(text=message)
 
 
     def process_message(
@@ -132,7 +152,7 @@ class AutobusNLUSystem:
         image_url: Optional[str] = None,
         audio_media_id: Optional[str] = None,
         audio_url: Optional[str] = None
-    ) -> str:
+    ) -> ProcessMessageResult:
         """
         Main method to process user messages with optional multimodal inputs (images/audio)
         
@@ -169,7 +189,7 @@ class AutobusNLUSystem:
                 if should_close:
                     db.close()
             self.conversation_manager.update_conversation_history(user_id, "assistant", response)
-            return response
+            return self._as_result(response)
 
         logger.info("Received message from %s: %s", user_id, (user_message or "")[:200])
 
@@ -179,7 +199,7 @@ class AutobusNLUSystem:
                 thanks = "You're welcome. Reach out anytime you need help."
                 self.conversation_manager.update_conversation_history(user_id, "assistant", thanks)
                 self.conversation_manager.finalize_completed_session(user_id)
-                return thanks
+                return self._as_result(thanks)
             state.conversation_lifecycle = "active"
             self.conversation_manager._save_conversation_state(state)
         else:
@@ -200,11 +220,23 @@ class AutobusNLUSystem:
         # Detect intent and extract slots
         logger.info("Detecting intent for user %s (current_intent=%s)", user_id, state.current_intent)
         quick_delete_index = self._try_parse_delete_task_command(user_message)
+        quick_payment_slots = (
+            None if quick_delete_index is not None else try_parse_payment_command(user_message)
+        )
         if quick_delete_index is not None:
             intent = "delete_task"
             extracted_slots = {"task_number": str(quick_delete_index)}
             missing_slots = []
             logger.info("Parsed delete-task command for user %s: index=%s", user_id, quick_delete_index)
+        elif quick_payment_slots is not None:
+            intent = "make_payment"
+            extracted_slots = quick_payment_slots
+            missing_slots = []
+            logger.info(
+                "Parsed payment command for user %s: slots=%s",
+                user_id,
+                quick_payment_slots,
+            )
         else:
             intent, extracted_slots, missing_slots = self.intent_detector.detect_intent_and_slots(
                 user_message, state.conversation_history, state.current_intent, media_context
@@ -215,21 +247,21 @@ class AutobusNLUSystem:
             logger.info("Model cannot process image for user %s; asking for description", user_id)
             response = self.response_formatter.format_response("", "ask_for_image_description")
             self.conversation_manager.update_conversation_history(user_id, "assistant", response)
-            return response
+            return self._as_result(response)
         
         # If the intent is not clear due to low confidence, return appropriate response
         if intent == "intent_not_clear":
             logger.info("Intent not clear for user %s", user_id)
             response = self.response_formatter.format_response("", "intent_not_clear")
             self.conversation_manager.update_conversation_history(user_id, "assistant", response)
-            return response
+            return self._as_result(response)
 
         from core.nlu.config import INTENTS
         if intent == "unknown" or intent not in INTENTS:
             logger.info("Unknown intent for user %s (intent=%s)", user_id, intent)
             response = self.response_formatter.format_response("", "intent_not_clear")
             self.conversation_manager.update_conversation_history(user_id, "assistant", response)
-            return response
+            return self._as_result(response)
         
         logger.info("Detected intent=%s missing=%s", intent, missing_slots)
 
@@ -239,7 +271,7 @@ class AutobusNLUSystem:
                 "", "account_required", channel=channel_type(user_id)
             )
             self.conversation_manager.update_conversation_history(user_id, "assistant", response)
-            return response
+            return self._as_result(response)
 
         merchant_id, channel_user_id = self._parse_merchant_scoped_user_id(user_id)
         if merchant_id:
@@ -291,15 +323,17 @@ class AutobusNLUSystem:
                 self.conversation_manager._save_conversation_state(state)
 
                 self.conversation_manager.update_conversation_history(user_id, "assistant", response)
-                return response
+                return self._as_result(response)
 
         # Check for missing required slots
         current_missing = self.slot_manager.get_missing_slots(intent, state.collected_slots)
 
         if current_missing:
             prompt = self.slot_manager.generate_slot_prompt(intent, current_missing)
-            response = self.response_formatter.format_response(
-                intent, "missing_slots", prompt=prompt
+            result = self._as_result(
+                self.response_formatter.format_response(
+                    intent, "missing_slots", prompt=prompt
+                )
             )
 
         else:
@@ -308,16 +342,16 @@ class AutobusNLUSystem:
             handler_outcome = self._execute_action(
                 user_id, intent, slots_to_execute, user_message, state.conversation_history
             )
-            response = self._terminal_listener_apply(user_id, handler_outcome)
+            result = self._terminal_listener_apply(user_id, handler_outcome)
         
         # Add assistant response to history
-        self.conversation_manager.update_conversation_history(user_id, "assistant", response)
+        self.conversation_manager.update_conversation_history(user_id, "assistant", result.text)
 
         # Clear collected slots if action was executed
         if not current_missing:
             self.conversation_manager.clear_collected_slots(user_id)
         
-        return response
+        return result
     
     def _handle_pin_verification(self, user_id: str, pin_input: str) -> str:
         """Handle PIN verification for pending actions"""
@@ -342,11 +376,12 @@ class AutobusNLUSystem:
                 pending_intent,
                 pending_slots,
             )
-            response = self._terminal_listener_apply(user_id, outcome)
+            result = self._terminal_listener_apply(user_id, outcome)
             state.waiting_for_pin = False
             state.pending_action = {}
             state.collected_slots = {}
             self.conversation_manager._save_conversation_state(state)
+            response = result.text
         else:
             # Invalid PIN
             response = self.response_formatter.format_response("", "invalid_pin")
@@ -776,8 +811,14 @@ class AutobusNLUSystem:
         user_data: Optional[Dict[str, Any]],
         user_message: str = "",
     ) -> IntentHandlerResult:
-        """Build a daily or weekly to-do briefing from memory lists and reminders."""
+        """Build a daily, weekly, or monthly to-do briefing from memory lists and reminders."""
         from core.memory.service.briefing_service import BriefingPeriod, BriefingService
+
+        _PERIOD_BY_INTENT = {
+            "daily_briefing": BriefingPeriod.DAILY,
+            "weekly_briefing": BriefingPeriod.WEEKLY,
+            "monthly_briefing": BriefingPeriod.MONTHLY,
+        }
 
         db = SessionLocal()
         try:
@@ -802,9 +843,7 @@ class AutobusNLUSystem:
                     day_offset=-1,
                 )
             else:
-                period = (
-                    BriefingPeriod.DAILY if intent == "daily_briefing" else BriefingPeriod.WEEKLY
-                )
+                period = _PERIOD_BY_INTENT.get(intent, BriefingPeriod.DAILY)
                 tasks = svc.collect_tasks(owner_user_id=internal_user_id, period=period)
                 msg = svc.format_briefing(tasks=tasks, period=period)
 
@@ -817,7 +856,10 @@ class AutobusNLUSystem:
                 user_id,
                 internal_user_id,
             )
-            return IntentHandlerResult(msg, 200)
+            audio_bytes = self.tts_client.synthesize_briefing(msg)
+            if audio_bytes:
+                logger.info("Generated briefing audio for user %s (%s bytes)", user_id, len(audio_bytes))
+            return IntentHandlerResult(msg, 200, audio_bytes=audio_bytes)
         except Exception as e:
             logger.error("Briefing failed for user %s: %s", user_id, e, exc_info=True)
             return IntentHandlerResult(

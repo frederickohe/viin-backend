@@ -11,6 +11,7 @@ import os
 from core.user.model.User import User
 from core.user.service.user_service import UserService
 from core.nlu.nlu import AutobusNLUSystem
+from core.nlu.service.message_delivery import send_whatsapp_nlu_response
 from core.subscription.service.subscription_service import SubscriptionService
 from core.webhooks.service.whatsapp_service import WhatsAppService
 from utilities.phone_utils import normalize_ghana_phone_number
@@ -356,11 +357,11 @@ async def handle_simple_chat(
             )
 
         nlu_system = AutobusNLUSystem(db_session=db)
-        response_message = nlu_system.process_message(nlu_user_id, msg)
+        result = nlu_system.process_message(nlu_user_id, msg)
 
-        logger.info(f"Generated response: {response_message}")
+        logger.info(f"Generated response: {result.text}")
 
-        return SimpleChatResponse(message=response_message)
+        return SimpleChatResponse(message=result.text)
 
     except Exception as e:
         logger.error(f"Error handling simple chat: {e}", exc_info=True)
@@ -513,18 +514,18 @@ def handle_text_message(message: dict, phone: str, phone_id: str, db: Session):
         nlu_system = AutobusNLUSystem(db_session=db)
 
         # Process the message
-        response_message = nlu_system.process_message(
+        result = nlu_system.process_message(
                 normalize_ghana_phone_number(phone),
                 message_text
         )
 
-        logger.info(f"Generated response: {response_message}")
+        logger.info(f"Generated response: {result.text}")
 
-        # Send the response back to the user via WhatsApp
-        message_sent = whatsapp_service.send_message(
+        message_sent = send_whatsapp_nlu_response(
+            whatsapp_service,
             phone_id=phone_id,
             recipient_phone=phone,
-            message_text=response_message
+            result=result,
         )
 
         if not message_sent:
@@ -778,20 +779,19 @@ def handle_image_message(message: dict, phone: str, phone_id: str, db: Session):
                 logger.info("No caption provided with image, using default message")
             
             # Process the message with image
-            response_message = nlu_system.process_message(
+            nlu_result = nlu_system.process_message(
                 phone,
                 user_message,
-                result["has_active_subscription"],
-                image_media_id=media_id
+                image_media_id=media_id,
             )
             
-            logger.info(f"Generated response for image message: {response_message}")
+            logger.info(f"Generated response for image message: {nlu_result.text}")
             
-            # Send the response back to the user
-            message_sent = whatsapp_service.send_message(
+            message_sent = send_whatsapp_nlu_response(
+                whatsapp_service,
                 phone_id=phone_id,
                 recipient_phone=phone,
-                message_text=response_message
+                result=nlu_result,
             )
             
             if not message_sent:
@@ -868,20 +868,19 @@ def handle_audio_message(message: dict, phone: str, phone_id: str, db: Session):
                 logger.info("No caption provided with audio, using default message")
             
             # Process the message with audio
-            response_message = nlu_system.process_message(
+            nlu_result = nlu_system.process_message(
                 phone,
                 user_message,
-                result["has_active_subscription"],
-                audio_media_id=media_id
+                audio_media_id=media_id,
             )
             
-            logger.info(f"Generated response for audio message: {response_message}")
+            logger.info(f"Generated response for audio message: {nlu_result.text}")
             
-            # Send the response back to the user
-            message_sent = whatsapp_service.send_message(
+            message_sent = send_whatsapp_nlu_response(
+                whatsapp_service,
                 phone_id=phone_id,
                 recipient_phone=phone,
-                message_text=response_message
+                result=nlu_result,
             )
             
             if not message_sent:

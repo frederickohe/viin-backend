@@ -8,3 +8,5 @@ class IntentHandlerResult:
 
     message: str
     http_status: Optional[int] = None
+    audio_bytes: Optional[bytes] = None
+    audio_mime_type: str = "audio/mpeg"

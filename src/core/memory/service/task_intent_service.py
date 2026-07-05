@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from core.memory.service.due_date_parser import parse_due_at, parse_time_of_day
 from core.memory.service.memory_service import MemoryService
 from core.memory.service.reminder_delivery_service import ReminderDeliveryService
 
@@ -30,19 +31,6 @@ _FREQ_MAP = {
     "every month": "MONTHLY",
     "each month": "MONTHLY",
 }
-
-_TIME_RE = re.compile(
-    r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>am|pm|a\.m\.|p\.m\.)?",
-    re.IGNORECASE,
-)
-_ISO_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?",
-)
-_RELATIVE_RE = re.compile(
-    r"\bin\s+(\d+)\s*(minute|minutes|min|mins|hour|hours|hr|hrs|day|days)\b",
-    re.IGNORECASE,
-)
-
 
 def normalize_schedule_type(raw: Optional[str]) -> Optional[str]:
     value = (raw or "").strip().lower()
@@ -83,83 +71,6 @@ def _ensure_aware(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt
-
-
-def parse_time_of_day(value: str) -> Tuple[int, int]:
-    text = (value or "").strip().lower()
-    match = _TIME_RE.search(text)
-    if not match:
-        raise ValueError(f"Could not understand the time: {value}")
-
-    hour = int(match.group("hour"))
-    minute = int(match.group("minute") or 0)
-    ampm = (match.group("ampm") or "").replace(".", "")
-
-    if ampm == "pm" and hour < 12:
-        hour += 12
-    elif ampm == "am" and hour == 12:
-        hour = 0
-
-    if hour > 23 or minute > 59:
-        raise ValueError(f"Invalid time: {value}")
-    return hour, minute
-
-
-def parse_due_at(value: str, *, now: Optional[datetime] = None) -> datetime:
-    """Parse a due date/time from natural language or ISO-like strings."""
-    now = _ensure_aware(now or _now())
-    text = (value or "").strip()
-    if not text:
-        raise ValueError("Due date/time is required.")
-
-    lowered = text.lower()
-
-    relative_match = _RELATIVE_RE.search(lowered)
-    if relative_match:
-        qty = int(relative_match.group(1))
-        unit = relative_match.group(2).lower()
-        if unit.startswith("min"):
-            return now + timedelta(minutes=qty)
-        if unit.startswith("hour") or unit.startswith("hr"):
-            return now + timedelta(hours=qty)
-        if unit.startswith("day"):
-            return now + timedelta(days=qty)
-
-    if _ISO_RE.match(text):
-        normalized = text.replace(" ", "T")
-        if "T" not in normalized and len(normalized) == 10:
-            normalized += "T09:00:00"
-        try:
-            parsed = datetime.fromisoformat(normalized)
-            return _ensure_aware(parsed)
-        except ValueError as exc:
-            raise ValueError(f"Could not parse date/time: {value}") from exc
-
-    if "tomorrow" in lowered:
-        base_day = now.date() + timedelta(days=1)
-    elif "yesterday" in lowered:
-        base_day = now.date() - timedelta(days=1)
-    elif "today" in lowered:
-        base_day = now.date()
-    else:
-        base_day = now.date()
-
-    hour, minute = 9, 0
-    time_match = _TIME_RE.search(lowered)
-    if time_match:
-        hour, minute = parse_time_of_day(time_match.group(0))
-
-    due = datetime(
-        base_day.year,
-        base_day.month,
-        base_day.day,
-        hour,
-        minute,
-        tzinfo=timezone.utc,
-    )
-    if due <= now and "tomorrow" not in lowered and "yesterday" not in lowered:
-        due += timedelta(days=1)
-    return due
 
 
 def next_recurrence_start(repeat_time: str, *, now: Optional[datetime] = None) -> datetime:

@@ -23,7 +23,7 @@ class ResponseFormatter:
             return f"✅ {kwargs.get('message', 'Action completed successfully!')}"
         
         elif message_type == "intent_not_clear":
-            return "I'm not quite sure what you're asking. Could you please rephrase or provide more details? I can help you with: todos and reminders, email, media generation, Paystack payments, daily or weekly briefings, and profile updates."
+            return "I'm not quite sure what you're asking. Could you please rephrase or provide more details? I can help you with: todos and reminders, email, media generation, Paystack payments, daily, weekly, or monthly briefings, and profile updates."
         
         elif message_type == "account_required":
             channel = kwargs.get("channel", "web")

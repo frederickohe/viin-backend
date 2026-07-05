@@ -73,7 +73,7 @@ async def process_message(
         return NLUResponse(
             user_id=account_phone,
             message=request.message,
-            response=response,
+            response=response.text,
             success=True,
         )
 

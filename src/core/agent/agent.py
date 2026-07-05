@@ -52,7 +52,7 @@ class AutoBus:
 
             session = db_session or self.db_session
             nlu = AutobusNLUSystem(db_session=session)
-            return nlu.process_message(userid, message)
+            return nlu.process_message(userid, message).text
 
         except Exception as e:
             logger.error("Error processing message for user %s: %s", userid, e, exc_info=True)

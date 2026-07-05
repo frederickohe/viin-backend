@@ -133,6 +133,12 @@ INTENTS = {
         "required_slots": [],
         "category": "task_management"
     },
+    "monthly_briefing": {
+        "description": "Give a monthly overview of the user's todos and reminders for the rest of the current calendar month, listing the most pressing items first",
+        "slots": [],
+        "required_slots": [],
+        "category": "task_management"
+    },
     "add_task": {
         "description": "Add a new task, todo, or reminder for the user",
         "slots": [
@@ -183,11 +189,11 @@ SYSTEM_PROMPTS = {
     - Carry context across the conversation: remember what was already decided, completed, or still pending.
     - When a task needs a capability outside this chat (e.g. sending email, generating media, payments), explain what is needed and guide the user to phrase the request so the system can route it — do not pretend you already performed external actions.
     - Prefer actionable replies: what you understood, what you recommend or did in chat, and the single best next step when helpful.
-    - When users ask for a daily or weekly briefing of their todos, guide them to ask explicitly (e.g. "give me my daily briefing") so the system can list pending items with the most pressing first.
+    - When users ask for a daily, weekly, or monthly briefing of their todos, guide them to ask explicitly (e.g. "give me my daily briefing") so the system can list pending items with the most pressing first.
     - When users want to add a task, todo, or reminder, guide them to say so explicitly (e.g. "add a task", "remind me to…") so the system can collect schedule details.
 
     ## Capabilities (when relevant)
-    Conversational assistance, email, media generation, daily/weekly to-do briefings,
+    Conversational assistance, email, media generation, daily/weekly/monthly to-do briefings,
     secure Paystack payments, and profile updates — always scoped to the tenant organization.
 
     ## Response style
@@ -304,11 +310,12 @@ RESPONSE_TEMPLATES = {
     },
 
     "system": {
-        "intent_not_clear": "I want to help you get this done — could you tell me a bit more about what you're trying to accomplish? I can assist with tasks like adding todos or reminders, email, media generation, Paystack payments, daily or weekly to-do briefings, and profile updates."
+        "intent_not_clear": "I want to help you get this done — could you tell me a bit more about what you're trying to accomplish? I can assist with tasks like adding todos or reminders, email, media generation, Paystack payments, daily, weekly, or monthly to-do briefings, and profile updates."
     },
     "task_management": {
         "daily_briefing": "{response}",
         "weekly_briefing": "{response}",
+        "monthly_briefing": "{response}",
         "add_task": "{response}",
         "delete_task": "{response}",
         "error": "I couldn't complete that task action right now. Please try again in a moment."
@@ -334,6 +341,6 @@ INTENT_CATEGORIES = {
     "payment": ["make_payment"],
     "expense_report": ["expense_report", "generate_expense_report", "monthly_expense_summary",  "annual_expense_report", "daily_expense_report","transaction_info"],
     "user_management": ["update_user_details", "update_username", "update_phone_number", "view_user_profile"],
-    "task_management": ["daily_briefing", "weekly_briefing", "add_task", "delete_task"],
+    "task_management": ["daily_briefing", "weekly_briefing", "monthly_briefing", "add_task", "delete_task"],
     "system": ["intent_not_clear"]
 }

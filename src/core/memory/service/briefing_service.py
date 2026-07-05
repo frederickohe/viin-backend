@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,7 @@ from core.memory.model.reminder import Reminder
 class BriefingPeriod(str, Enum):
     DAILY = "daily"
     WEEKLY = "weekly"
+    MONTHLY = "monthly"
 
 
 _URGENT_PATTERN = re.compile(
@@ -247,7 +249,10 @@ class BriefingService:
         start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
         if period == BriefingPeriod.DAILY:
             return start_of_today + timedelta(days=1)
-        return start_of_today + timedelta(days=7)
+        if period == BriefingPeriod.WEEKLY:
+            return start_of_today + timedelta(days=7)
+        last_day = calendar.monthrange(now.year, now.month)[1]
+        return start_of_today.replace(day=last_day) + timedelta(days=1)
 
     @staticmethod
     def _sort_key(
@@ -266,20 +271,44 @@ class BriefingService:
             age_sort,
         )
 
+    @staticmethod
+    def _period_label(period: BriefingPeriod) -> str:
+        if period == BriefingPeriod.DAILY:
+            return "Daily"
+        if period == BriefingPeriod.WEEKLY:
+            return "Weekly"
+        return "Monthly"
+
+    @staticmethod
+    def _period_scope(period: BriefingPeriod) -> str:
+        if period == BriefingPeriod.DAILY:
+            return "today"
+        if period == BriefingPeriod.WEEKLY:
+            return "the next 7 days"
+        return "this month"
+
+    @staticmethod
+    def _period_empty_unit(period: BriefingPeriod) -> str:
+        if period == BriefingPeriod.DAILY:
+            return "day"
+        if period == BriefingPeriod.WEEKLY:
+            return "week"
+        return "month"
+
     def format_briefing(self, *, tasks: List[BriefingTask], period: BriefingPeriod) -> str:
         now = _now()
-        label = "Daily" if period == BriefingPeriod.DAILY else "Weekly"
+        label = self._period_label(period)
         date_str = now.strftime("%A, %B %d, %Y")
 
         if not tasks:
             return (
                 f"📋 {label} Briefing — {date_str}\n\n"
                 "You're all caught up — no pending to-dos, reminders, or saved notes "
-                f"for this {'day' if period == BriefingPeriod.DAILY else 'week'}."
+                f"for this {self._period_empty_unit(period)}."
             )
 
         lines = [f"📋 {label} Briefing — {date_str}", ""]
-        scope = "today" if period == BriefingPeriod.DAILY else "the next 7 days"
+        scope = self._period_scope(period)
         lines.append(f"You have {len(tasks)} item{'s' if len(tasks) != 1 else ''} to focus on ({scope}):")
         lines.append("")
 
@@ -317,7 +346,7 @@ class BriefingService:
     ) -> str:
         if not task_refs:
             raise ValueError(
-                "No briefing list to work from. Ask for a daily or weekly briefing first."
+                "No briefing list to work from. Ask for a daily, weekly, or monthly briefing first."
             )
         if index < 1 or index > len(task_refs):
             raise ValueError(

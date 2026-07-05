@@ -265,3 +265,16 @@ def get_weekly_briefing(
     body = svc.format_briefing(tasks=tasks, period=BriefingPeriod.WEEKLY)
     return BriefingResponse(period="weekly", body=body, item_count=len(tasks))
 
+
+@memory_routes.get("/briefing/monthly", response_model=BriefingResponse)
+def get_monthly_briefing(
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    current_user_email = authjwt.get_jwt_subject()
+    user = UserService(db).get_current_user(current_user_email)
+    svc = BriefingService(db)
+    tasks = svc.collect_tasks(owner_user_id=user.id, period=BriefingPeriod.MONTHLY)
+    body = svc.format_briefing(tasks=tasks, period=BriefingPeriod.MONTHLY)
+    return BriefingResponse(period="monthly", body=body, item_count=len(tasks))
+
