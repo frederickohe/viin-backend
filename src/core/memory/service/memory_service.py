@@ -292,6 +292,34 @@ class MemoryService:
             q = q.filter(MemoryListItem.completed_at.is_(None))
         return list(q.all())
 
+    def delete_list_item(
+        self, *, owner_user_id: str, list_id: str, item_id: str
+    ) -> None:
+        lst = (
+            self.db.query(MemoryList)
+            .filter(MemoryList.id == list_id)
+            .filter(MemoryList.owner_user_id == owner_user_id)
+            .filter(MemoryList.deleted_at.is_(None))
+            .first()
+        )
+        if not lst:
+            raise HTTPException(status_code=404, detail="List not found")
+
+        item = (
+            self.db.query(MemoryListItem)
+            .filter(MemoryListItem.id == item_id)
+            .filter(MemoryListItem.list_id == list_id)
+            .filter(MemoryListItem.deleted_at.is_(None))
+            .first()
+        )
+        if not item:
+            raise HTTPException(status_code=404, detail="List item not found")
+
+        item.deleted_at = _now()
+        item.updated_at = _now()
+        self.db.add(item)
+        self.db.commit()
+
     def complete_list_item(
         self, *, owner_user_id: str, list_id: str, item_id: str
     ) -> MemoryListItem:

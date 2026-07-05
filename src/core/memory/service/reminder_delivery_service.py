@@ -50,7 +50,11 @@ class ReminderDeliveryService:
     def default_delivery_for_owner(owner_user_id: str) -> dict:
         owner = (owner_user_id or "").strip()
         if owner.startswith("tg:"):
-            return {"channels": ["telegram"]}
+            chat_id = owner.removeprefix("tg:").strip()
+            delivery: dict = {"channels": ["telegram", "sms"]}
+            if chat_id:
+                delivery["telegram_chat_id"] = chat_id
+            return delivery
         return {"channels": ["chat", "sms"]}
 
     @staticmethod
@@ -131,10 +135,47 @@ class ReminderDeliveryService:
         )
         return (ok, None if ok else "WhatsApp send_message failed")
 
-    def deliver_telegram(self, *, owner_user_id: str, message: str) -> Tuple[bool, Optional[str]]:
-        chat_id = owner_user_id.removeprefix("tg:").strip()
+    @staticmethod
+    def resolve_telegram_chat_id(
+        owner_user_id: str,
+        user: Optional[User],
+        delivery: Optional[dict] = None,
+    ) -> Optional[str]:
+        """Resolve Telegram chat id from delivery payload, tg: owner id, or linked user agents."""
+        payload = delivery or {}
+        stored = payload.get("telegram_chat_id")
+        if stored is not None:
+            chat_id = str(stored).strip()
+            if chat_id:
+                return chat_id
+
+        owner = (owner_user_id or "").strip()
+        if owner.startswith("tg:"):
+            chat_id = owner.removeprefix("tg:").strip()
+            if chat_id:
+                return chat_id
+
+        if user:
+            agents = user.agents or {}
+            linked = (agents.get("telegram") or {}).get("chat_id")
+            if linked is not None:
+                chat_id = str(linked).strip()
+                if chat_id:
+                    return chat_id
+
+        return None
+
+    def deliver_telegram(
+        self,
+        *,
+        owner_user_id: str,
+        message: str,
+        user: Optional[User] = None,
+        delivery: Optional[dict] = None,
+    ) -> Tuple[bool, Optional[str]]:
+        chat_id = self.resolve_telegram_chat_id(owner_user_id, user, delivery)
         if not chat_id:
-            return False, "Invalid Telegram owner_user_id"
+            return False, "No Telegram chat id linked for this user"
         ok = TelegramService().send_message(chat_id=chat_id, message_text=f"⏰ {message}")
         return (ok, None if ok else "Telegram send_message failed")
 
@@ -179,6 +220,8 @@ class ReminderDeliveryService:
                 ok, err = self.deliver_telegram(
                     owner_user_id=reminder.owner_user_id or "",
                     message=message,
+                    user=user,
+                    delivery=reminder.delivery or {},
                 )
             else:
                 err = f"Unsupported channel: {channel}"

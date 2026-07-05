@@ -89,7 +89,7 @@ INTENTS = {
     # ===== PAYSTACK PAYMENT INTENTS =====
     "make_payment": {
         "description": "Send money or pay someone via secure Paystack checkout",
-        "slots": ["amount", "recipient_name", "recipient_phone", "description"],
+        "slots": ["amount", "recipient_name", "recipient_phone", "description", "payment_method"],
         "required_slots": ["amount"],
         "category": "payment"
     },
@@ -143,6 +143,12 @@ INTENTS = {
             "repeat_time",
         ],
         "required_slots": ["task_body", "schedule_type"],
+        "category": "task_management"
+    },
+    "delete_task": {
+        "description": "Delete or remove a task from the user's last numbered briefing list by its list number",
+        "slots": ["task_number"],
+        "required_slots": ["task_number"],
         "category": "task_management"
     },
     
@@ -287,7 +293,7 @@ RESPONSE_TEMPLATES = {
     },
     
     "payment": {
-        "make_payment": "💳 Pay GHS {amount}{recipient_label} via Paystack: {payment_url}\nReference: {reference}",
+        "make_payment": "💳 Pay GHS {amount}{recipient_label} via Paystack{method_label}: {payment_url}\nReference: {reference}",
         "missing_slots_make_payment": "I can set up a Paystack payment for you. Please provide: {missing_slots}",
         "error": "I couldn't start the Paystack checkout right now. Please try again in a moment."
     },
@@ -304,6 +310,7 @@ RESPONSE_TEMPLATES = {
         "daily_briefing": "{response}",
         "weekly_briefing": "{response}",
         "add_task": "{response}",
+        "delete_task": "{response}",
         "error": "I couldn't complete that task action right now. Please try again in a moment."
     },
 
@@ -327,6 +334,6 @@ INTENT_CATEGORIES = {
     "payment": ["make_payment"],
     "expense_report": ["expense_report", "generate_expense_report", "monthly_expense_summary",  "annual_expense_report", "daily_expense_report","transaction_info"],
     "user_management": ["update_user_details", "update_username", "update_phone_number", "view_user_profile"],
-    "task_management": ["daily_briefing", "weekly_briefing", "add_task"],
+    "task_management": ["daily_briefing", "weekly_briefing", "add_task", "delete_task"],
     "system": ["intent_not_clear"]
 }

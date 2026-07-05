@@ -44,6 +44,8 @@ class BriefingTask:
     is_overdue: bool
     has_urgent_keyword: bool
     sort_key: tuple
+    entity_id: str
+    list_id: Optional[str] = None
 
 
 _BRIEFING_NOTE_TYPES = {
@@ -89,6 +91,10 @@ class BriefingService:
         lines.append("")
         for i, task in enumerate(tasks, start=1):
             lines.append(f"{i}. {self._task_detail(task, now=now)}")
+        lines.append("")
+        lines.append(
+            'To remove an item, say "delete 1" or "remove 2" using the number from the list above.'
+        )
         return "\n".join(lines)
 
     def collect_tasks_due_on_day(
@@ -125,6 +131,7 @@ class BriefingService:
                         due_at=due,
                         created_at=r.created_at,
                     ),
+                    entity_id=r.id,
                 )
             )
 
@@ -163,6 +170,7 @@ class BriefingService:
                         due_at=due,
                         created_at=r.created_at,
                     ),
+                    entity_id=r.id,
                 )
             )
 
@@ -194,6 +202,8 @@ class BriefingService:
                         due_at=None,
                         created_at=item.created_at,
                     ),
+                    entity_id=item.id,
+                    list_id=lst.id,
                 )
             )
 
@@ -225,6 +235,7 @@ class BriefingService:
                         due_at=None,
                         created_at=mem.created_at,
                     ),
+                    entity_id=mem.id,
                 )
             )
 
@@ -277,8 +288,68 @@ class BriefingService:
             lines.append(f"{i}. {detail}")
 
         lines.append("")
-        lines.append("Most pressing item is listed first. Ask me anytime for an updated briefing.")
+        lines.append(
+            "Most pressing item is listed first. To remove an item, say "
+            '"delete 1" or "remove 2" using the number from the list above.'
+        )
         return "\n".join(lines)
+
+    @staticmethod
+    def tasks_to_refs(tasks: List[BriefingTask]) -> List[dict]:
+        refs: List[dict] = []
+        for task in tasks:
+            ref = {
+                "source": task.source,
+                "entity_id": task.entity_id,
+                "title": task.title,
+            }
+            if task.list_id:
+                ref["list_id"] = task.list_id
+            refs.append(ref)
+        return refs
+
+    def delete_task_at_index(
+        self,
+        *,
+        owner_user_id: str,
+        task_refs: List[dict],
+        index: int,
+    ) -> str:
+        if not task_refs:
+            raise ValueError(
+                "No briefing list to work from. Ask for a daily or weekly briefing first."
+            )
+        if index < 1 or index > len(task_refs):
+            raise ValueError(
+                f"Please choose a number between 1 and {len(task_refs)} from your last briefing."
+            )
+
+        ref = task_refs[index - 1]
+        title = (ref.get("title") or "that item").strip()
+        source = ref.get("source")
+        entity_id = ref.get("entity_id")
+
+        from core.memory.service.memory_service import MemoryService
+
+        memory = MemoryService(self.db)
+        if source == "reminder":
+            memory.cancel_reminder(owner_user_id=owner_user_id, reminder_id=entity_id)
+            return f"✅ Removed reminder: {title}"
+        if source == "todo":
+            list_id = ref.get("list_id")
+            if not list_id:
+                raise ValueError("Could not find that to-do item.")
+            memory.delete_list_item(
+                owner_user_id=owner_user_id,
+                list_id=list_id,
+                item_id=entity_id,
+            )
+            return f"✅ Removed from your task list: {title}"
+        if source == "note":
+            memory.delete_memory_item(owner_user_id=owner_user_id, item_id=entity_id)
+            return f"✅ Removed saved note: {title}"
+
+        raise ValueError("That item type cannot be removed from chat.")
 
     @staticmethod
     def _task_detail(task: BriefingTask, *, now: datetime) -> str:

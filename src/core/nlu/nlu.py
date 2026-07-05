@@ -43,6 +43,11 @@ from utilities.crypto import decrypt_secret
 
 logger = logging.getLogger(__name__)
 
+_DELETE_TASK_RE = re.compile(
+    r"^\s*(?:delete|remove|cancel)(?:\s+(?:task|item|#))?[\s#]*(\d+)\s*$",
+    re.IGNORECASE,
+)
+
 class AutobusNLUSystem:
     def __init__(self, db_session=None):
         self.intent_detector = IntentDetector()
@@ -92,6 +97,16 @@ class AutobusNLUSystem:
         if t in phrases:
             return True
         return any(t.startswith(p + " ") or t.startswith(p + ",") for p in phrases if len(p) > 2)
+
+    @staticmethod
+    def _try_parse_delete_task_command(user_message: str) -> Optional[int]:
+        match = _DELETE_TASK_RE.match((user_message or "").strip())
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except (TypeError, ValueError):
+            return None
 
 
 
@@ -184,9 +199,16 @@ class AutobusNLUSystem:
         
         # Detect intent and extract slots
         logger.info("Detecting intent for user %s (current_intent=%s)", user_id, state.current_intent)
-        intent, extracted_slots, missing_slots = self.intent_detector.detect_intent_and_slots(
-            user_message, state.conversation_history, state.current_intent, media_context
-        )
+        quick_delete_index = self._try_parse_delete_task_command(user_message)
+        if quick_delete_index is not None:
+            intent = "delete_task"
+            extracted_slots = {"task_number": str(quick_delete_index)}
+            missing_slots = []
+            logger.info("Parsed delete-task command for user %s: index=%s", user_id, quick_delete_index)
+        else:
+            intent, extracted_slots, missing_slots = self.intent_detector.detect_intent_and_slots(
+                user_message, state.conversation_history, state.current_intent, media_context
+            )
 
         # If the model explicitly reported it cannot process the image, ask the user
         if intent == "cannot_process_image":
@@ -274,7 +296,7 @@ class AutobusNLUSystem:
         # Check for missing required slots
         current_missing = self.slot_manager.get_missing_slots(intent, state.collected_slots)
 
-        if current_missing or (len(state.collected_slots) == 1 and 'amount' in state.collected_slots):
+        if current_missing:
             prompt = self.slot_manager.generate_slot_prompt(intent, current_missing)
             response = self.response_formatter.format_response(
                 intent, "missing_slots", prompt=prompt
@@ -484,6 +506,8 @@ class AutobusNLUSystem:
         elif intent in task_management_intents:
             if intent == "add_task":
                 return self._process_add_task_intent(user_id, slots, user_data)
+            if intent == "delete_task":
+                return self._process_delete_task_intent(user_id, slots, user_data)
             return self._process_briefing_intent(user_id, intent, user_data, user_message)
         else:
             # Fallback for unhandled intents
@@ -769,6 +793,10 @@ class AutobusNLUSystem:
             svc = BriefingService(db)
             lowered = (user_message or "").lower()
             if "yesterday" in lowered or "last day" in lowered:
+                tasks = svc.collect_tasks_due_on_day(
+                    owner_user_id=internal_user_id,
+                    day_offset=-1,
+                )
                 msg = svc.build_due_day_briefing(
                     owner_user_id=internal_user_id,
                     day_offset=-1,
@@ -777,9 +805,12 @@ class AutobusNLUSystem:
                 period = (
                     BriefingPeriod.DAILY if intent == "daily_briefing" else BriefingPeriod.WEEKLY
                 )
-                msg = svc.build_briefing(
-                    owner_user_id=internal_user_id, period=period
-                )
+                tasks = svc.collect_tasks(owner_user_id=internal_user_id, period=period)
+                msg = svc.format_briefing(tasks=tasks, period=period)
+
+            state = self.conversation_manager.get_conversation_state(user_id)
+            state.pending_briefing_tasks = svc.tasks_to_refs(tasks)
+            self.conversation_manager._save_conversation_state(state)
             logger.info(
                 "Generated %s briefing for user %s (owner_user_id=%s)",
                 "yesterday" if "yesterday" in lowered or "last day" in lowered else intent,
@@ -792,6 +823,80 @@ class AutobusNLUSystem:
             return IntentHandlerResult(
                 self.response_formatter.format_response(
                     intent, "error", message="I couldn't generate your briefing right now."
+                ),
+                None,
+            )
+        finally:
+            db.close()
+
+    def _process_delete_task_intent(
+        self,
+        user_id: str,
+        slots: Dict[str, Any],
+        user_data: Optional[Dict[str, Any]],
+    ) -> IntentHandlerResult:
+        """Remove a task from the user's last numbered briefing list."""
+        from core.memory.service.briefing_service import BriefingService
+
+        raw_number = slots.get("task_number")
+        try:
+            task_index = int(str(raw_number).strip())
+        except (TypeError, ValueError, AttributeError):
+            return IntentHandlerResult(
+                "Please say which item to remove, e.g. \"delete 1\" or \"remove 2\".",
+                None,
+            )
+
+        db = SessionLocal()
+        try:
+            try:
+                internal_user_id = self._resolve_internal_user_id(user_id, user_data)
+            except ValueError:
+                return IntentHandlerResult(
+                    self.response_formatter.format_response(
+                        "", "account_required", channel=channel_type(user_id)
+                    ),
+                    None,
+                )
+
+            state = self.conversation_manager.get_conversation_state(user_id)
+            task_refs = list(state.pending_briefing_tasks or [])
+            svc = BriefingService(db)
+            msg = svc.delete_task_at_index(
+                owner_user_id=internal_user_id,
+                task_refs=task_refs,
+                index=task_index,
+            )
+
+            if task_refs:
+                del task_refs[task_index - 1]
+                state.pending_briefing_tasks = task_refs
+                self.conversation_manager._save_conversation_state(state)
+
+            logger.info(
+                "Deleted briefing task #%s for user %s (owner=%s)",
+                task_index,
+                user_id,
+                internal_user_id,
+            )
+            return IntentHandlerResult(msg, 200)
+        except ValueError as e:
+            return IntentHandlerResult(str(e), None)
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, str) else str(e.detail)
+            return IntentHandlerResult(
+                self.response_formatter.format_response(
+                    "delete_task", "error", message=detail
+                ),
+                None,
+            )
+        except Exception as e:
+            logger.error("Delete task failed for user %s: %s", user_id, e, exc_info=True)
+            return IntentHandlerResult(
+                self.response_formatter.format_response(
+                    "delete_task",
+                    "error",
+                    message="I couldn't remove that item right now. Please try again.",
                 ),
                 None,
             )

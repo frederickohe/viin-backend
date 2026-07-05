@@ -32,6 +32,7 @@ class ConversationState:
     intervention_created_at: Optional[str] = None
     viin_linked_phone: Optional[str] = None
     viin_linked_user_id: Optional[str] = None
+    pending_briefing_tasks: List[Dict] = None
 
     def __post_init__(self):
         if not self.conversation_id:
@@ -48,6 +49,8 @@ class ConversationState:
             self.last_successful_transaction = {}
         if self.pending_expense_dates is None:
             self.pending_expense_dates = []
+        if self.pending_briefing_tasks is None:
+            self.pending_briefing_tasks = []
 
     def to_dict(self) -> Dict:
         return {
@@ -73,6 +76,7 @@ class ConversationState:
             "intervention_created_at": self.intervention_created_at,
             "viin_linked_phone": self.viin_linked_phone,
             "viin_linked_user_id": self.viin_linked_user_id,
+            "pending_briefing_tasks": self.pending_briefing_tasks,
         }
 
     @classmethod

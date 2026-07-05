@@ -102,7 +102,38 @@ class SlotManager:
             elif freq in ("monthly", "month"):
                 validated_slots["repeat_frequency"] = "monthly"
 
+        if intent == "make_payment":
+            method = self._normalize_payment_method(validated_slots.get("payment_method"))
+            if method:
+                validated_slots["payment_method"] = method
+            else:
+                validated_slots.pop("payment_method", None)
+
         return validated_slots
+
+    @staticmethod
+    def _normalize_payment_method(value: Any) -> Optional[str]:
+        raw = (str(value or "")).strip().lower()
+        if not raw:
+            return None
+        momo_aliases = {
+            "momo",
+            "mobile money",
+            "mobile_money",
+            "mobile-money",
+            "mtn",
+            "vodafone",
+            "airteltigo",
+            "airtel",
+            "tigo",
+            "telecel",
+        }
+        bank_aliases = {"bank", "bank transfer", "bank_transfer", "bank-transfer"}
+        if raw in momo_aliases or any(alias in raw for alias in ("mobile money", "momo")):
+            return "momo"
+        if raw in bank_aliases or "bank" in raw:
+            return "bank"
+        return None
     
     def _validate_amount(self, amount: str) -> Optional[str]:
         """Validate amount format"""

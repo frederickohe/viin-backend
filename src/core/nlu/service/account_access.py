@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import object_session
 
+from config import settings
 from core.user.model.User import User
 from core.user.service.user_service import UserService
 from utilities.phone_utils import (
@@ -28,6 +29,10 @@ _TELEGRAM_AGENT = "telegram"
 logger = logging.getLogger(__name__)
 
 
+def signup_url() -> str:
+    return f"{settings.BASE_FRONTEND_URL.rstrip('/')}/signup"
+
+
 def channel_type(user_id: str) -> str:
     uid = (user_id or "").strip()
     if uid.startswith("tg:"):
@@ -43,7 +48,7 @@ def telegram_link_instruction_message() -> str:
         "To connect, send your Viin phone number exactly like this:\n"
         "link 0247291736\n\n"
         "(Replace with the phone number on your account.)\n\n"
-        "New here? Sign up on the Viin website, verify your phone via OTP, "
+        f"New here? Create a free account at {signup_url()}, verify your phone via OTP, "
         "then send the link command above."
     )
 
@@ -53,10 +58,11 @@ def friendly_account_required_message(
     *,
     phone: Optional[str] = None,
 ) -> str:
+    signup = signup_url()
     if channel == "whatsapp":
         return (
             "Hi! I don't have a Viin account for this number yet. "
-            "Create your free account on the Viin website, verify your phone, "
+            f"Create your free account at {signup}, verify your phone, "
             "then message me here again and I'll be ready to help."
         )
     if channel == "telegram":
@@ -66,13 +72,13 @@ def friendly_account_required_message(
                 f"I couldn't find a Viin account for {display}.\n\n"
                 "Please check the number matches your Viin account exactly, "
                 "including the leading 0 (e.g. link 0247291736).\n\n"
-                "If you haven't signed up yet, create your account on the Viin website "
+                f"If you haven't signed up yet, create your account at {signup} "
                 "and verify your phone via OTP first."
             )
         return telegram_link_instruction_message()
     return (
         "Hi! You'll need a Viin account for that. "
-        "Sign up on the Viin website, verify your phone, sign in, and try again."
+        f"Create one at {signup}, verify your phone, sign in, and try again."
     )
 
 

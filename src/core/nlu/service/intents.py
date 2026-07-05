@@ -250,11 +250,20 @@ class IntentDetector:
           • recipient_name — who receives the payment (optional)
           • recipient_phone — recipient phone number (optional)
           • description — optional note about what the payment is for
+          • payment_method — how the user wants to pay: "momo" / "mobile money" or "bank" (optional)
         - Phrases like "send X cedi to [name] [phone]" are make_payment, NOT conversational chat.
+        - If the user mentions momo, mobile money, MTN, Vodafone, or AirtelTigo → payment_method: "momo"
+        - If the user mentions bank or bank transfer → payment_method: "bank"
 
         REMINDER SHORTCUTS:
         - "remind me to [task] in X minutes/hours" → add_task with schedule_type=deadline and due_at="in X minutes"
         - Example: "remind me to text Anna in 2 minutes" → task_body="text Anna", schedule_type="deadline", due_at="in 2 minutes"
+
+        DELETE TASK (by number from last briefing list):
+        - User wants to remove/delete/cancel an item from their last numbered briefing → delete_task
+        - Examples: "delete 1", "remove 2", "cancel 3", "delete task 1", "remove item 2"
+        - Slot task_number is the number from the briefing list (1-based integer as string)
+        - Only use delete_task when the user references a number to remove from a prior briefing list
         """
         
         current_intent_context = f"CURRENT_INTENT: {current_intent if current_intent else 'Intent Extraction'}"
@@ -302,6 +311,16 @@ class IntentDetector:
         MISSING: [comma_separated_missing_slots]
         
         Examples:
+        User starts make_payment: "Pay 50 cedis via momo"
+        INTENT: make_payment
+        SLOTS: {{"amount": "50", "payment_method": "momo"}}
+        MISSING:
+
+        User starts make_payment: "Send 100 cedis by bank transfer"
+        INTENT: make_payment
+        SLOTS: {{"amount": "100", "payment_method": "bank"}}
+        MISSING:
+
         User starts make_payment: "Send 1 cedi to Anna 0207926310"
         INTENT: make_payment
         SLOTS: {{"amount": "1", "recipient_name": "Anna", "recipient_phone": "0207926310"}}
@@ -355,6 +374,16 @@ class IntentDetector:
         User starts open task: "Add task: call the supplier — no deadline"
         INTENT: add_task
         SLOTS: {{"task_body": "call the supplier", "schedule_type": "open"}}
+        MISSING:
+
+        User deletes from briefing list: "delete 2"
+        INTENT: delete_task
+        SLOTS: {{"task_number": "2"}}
+        MISSING:
+
+        User deletes from briefing list: "remove task 1"
+        INTENT: delete_task
+        SLOTS: {{"task_number": "1"}}
         MISSING:
         Examples end.
 

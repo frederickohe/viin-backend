@@ -15,8 +15,30 @@ import logging
 from core.nlu.service.datapipe.dataengine import EnhancedUserRAGManager
 
 from core.agent.tools.agent_config.user_agent_config_service import AgentConfigService
+from core.nlu.service.account_access import signup_url
 
 logger = logging.getLogger(__name__)
+
+_MOMO_PAYSTACK_CHANNELS = ["mobile_money"]
+_BANK_PAYSTACK_CHANNELS = ["bank"]
+
+
+def _resolve_paystack_channels(payment_method: Optional[str]) -> Optional[List[str]]:
+    method = (payment_method or "").strip().lower()
+    if method == "momo":
+        return _MOMO_PAYSTACK_CHANNELS
+    if method == "bank":
+        return _BANK_PAYSTACK_CHANNELS
+    return None
+
+
+def _payment_method_label(payment_method: Optional[str]) -> str:
+    method = (payment_method or "").strip().lower()
+    if method == "momo":
+        return " (Mobile Money)"
+    if method == "bank":
+        return " (Bank transfer)"
+    return ""
 
 class IntentProcessor:
     """Processes intents using LLM and agent framework tools"""
@@ -112,7 +134,7 @@ class IntentProcessor:
         if not email:
             return (
                 "I need an email address on your account to start a Paystack payment. "
-                "Please update your profile and try again."
+                f"Add one in your profile at {signup_url()} and try again."
             )
         if not user_id:
             return RESPONSE_TEMPLATES["payment"]["error"]
@@ -129,6 +151,10 @@ class IntentProcessor:
         recipient_name = (slots.get("recipient_name") or slots.get("recipient") or "").strip()
         recipient_phone = (slots.get("recipient_phone") or slots.get("phone_number") or "").strip()
         description = (slots.get("description") or "").strip()
+        payment_method = (slots.get("payment_method") or "").strip().lower() or None
+        payer_name = (user_data or {}).get("fullname", "").strip()
+        payer_phone = (user_data or {}).get("customer_phone") or (user_data or {}).get("user_id") or ""
+        payer_phone = str(payer_phone).strip()
 
         if not description and (recipient_name or recipient_phone):
             parts = []
@@ -145,7 +171,14 @@ class IntentProcessor:
             metadata["recipient_name"] = recipient_name
         if recipient_phone:
             metadata["recipient_phone"] = recipient_phone
+        if payer_name:
+            metadata["payer_name"] = payer_name
+        if payer_phone:
+            metadata["payer_phone"] = payer_phone
+        if payment_method:
+            metadata["payment_method"] = payment_method
         callback_url = (settings.PAYSTACK_BILLING_CALLBACK_URL or "").strip() or None
+        channels = _resolve_paystack_channels(payment_method)
 
         db = self.db_session
         should_close = False
@@ -160,6 +193,7 @@ class IntentProcessor:
             amount=amount_pesewas,
             metadata=metadata,
             callback_url=callback_url,
+            channels=channels,
         )
 
         try:
@@ -184,6 +218,7 @@ class IntentProcessor:
         return template.format(
             amount=f"{amount_ghs:.2f}",
             recipient_label=recipient_label,
+            method_label=_payment_method_label(payment_method),
             payment_url=result.authorization_url,
             reference=result.reference or "",
         )

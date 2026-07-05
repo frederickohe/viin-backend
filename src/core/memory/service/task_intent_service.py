@@ -181,6 +181,8 @@ class TaskIntentService:
     @staticmethod
     def _delivery_confirmation(delivery: dict) -> str:
         channels = [str(c).lower() for c in (delivery or {}).get("channels", [])]
+        if "telegram" in channels and "sms" in channels:
+            return "You'll get a Telegram and SMS reminder when it's due."
         if "telegram" in channels:
             return "You'll get a Telegram reminder when it's due."
         if "chat" in channels and "sms" in channels:
