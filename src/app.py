@@ -19,6 +19,7 @@ from core.notification.controller.notificationcontroller import notification_rou
 from core.otp.controller.otpcontroller import otp_routes
 from core.subscription.controller.subscription_controller import subscription_routes
 from core.webhooks.controller.webhookscontroller import webhooks_routes
+from core.webhooks.controller.telegram_controller import telegram_routes
 from core.nlu.controller.nlucontroller import nlu_routes
 from core.paystack.controller.paystack_controller import paystack_routes
 from core.agent.controller.agentcontroller import agent_routes
@@ -53,6 +54,31 @@ async def lifespan(app: FastAPI):
         MemorySchedulerService().start()
     except Exception as e:
         logger.warning(f"[APP_STARTUP] Memory scheduler init skipped: {e}")
+
+    # Register Telegram webhook when configured
+    try:
+        auto_set = os.environ.get("TELEGRAM_AUTO_SET_WEBHOOK", "true").lower() == "true"
+        if auto_set:
+            from core.webhooks.service.telegram_service import TelegramService
+
+            telegram = TelegramService()
+            if telegram.is_configured and telegram.webhook_url:
+                if telegram.set_webhook():
+                    info = telegram.get_webhook_info() or {}
+                    logger.info(
+                        "[APP_STARTUP] Telegram webhook active: url=%s pending=%s",
+                        info.get("url"),
+                        info.get("pending_update_count"),
+                    )
+                else:
+                    logger.warning("[APP_STARTUP] Telegram webhook registration failed")
+            elif telegram.is_configured:
+                logger.warning(
+                    "[APP_STARTUP] TELEGRAM_BOT_TOKEN set but TELEGRAM_WEBHOOK_URL missing; "
+                    "skipping webhook registration"
+                )
+    except Exception as e:
+        logger.warning(f"[APP_STARTUP] Telegram webhook init skipped: {e}")
     yield
     # Shutdown
     logger.info("[APP_SHUTDOWN] Application shutting down...")
@@ -130,6 +156,7 @@ app.include_router(notification_routes, prefix="/api/v1/notification", tags=["No
 app.include_router(otp_routes, prefix="/api/v1/otp", tags=["OTP Routes"])
 app.include_router(subscription_routes, prefix="/api/v1/subscription", tags=["Subscription Routes"])
 app.include_router(webhooks_routes, prefix="/api/v1/webhooks", tags=["Webhooks Routes"])
+app.include_router(telegram_routes, prefix="/api/v1/webhooks", tags=["Webhooks Routes"])
 app.include_router(nlu_routes, prefix="/api/v1/nlu", tags=["NLU Routes"])
 app.include_router(paystack_routes, prefix="/api/v1/paystack", tags=["Paystack Routes"])
 app.include_router(agent_routes, prefix="/api/v1/agent", tags=["Agent Routes"])
