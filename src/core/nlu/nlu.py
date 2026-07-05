@@ -26,9 +26,11 @@ from core.nlu.service.security import SecurityManager
 from core.nlu.service.date_selection_manager import DateSelectionManager, DateOption
 from core.nlu.service.account_access import (
     channel_type,
+    extract_phone_from_message,
     find_registered_user,
     friendly_account_required_message,
-    parse_link_phone_command,
+    resolve_telegram_user,
+    telegram_link_success_message,
 )
 from core.user.service.user_service import UserService
 from utilities.dbconfig import SessionLocal
@@ -124,22 +126,24 @@ class AutobusNLUSystem:
         # Get conversation state
         state = self.conversation_manager.get_conversation_state(user_id)
 
-        link_phone = parse_link_phone_command(user_message or "")
-        if link_phone and channel_type(user_id) == "telegram":
+        phone_attempt = extract_phone_from_message(user_message or "")
+        if phone_attempt and channel_type(user_id) == "telegram":
             self.conversation_manager.update_conversation_history(user_id, "user", user_message)
             db = self.db_session or SessionLocal()
             should_close = self.db_session is None
             try:
-                linked_user = find_registered_user(db, user_id, linked_phone=link_phone)
+                linked_user = resolve_telegram_user(
+                    db,
+                    user_id,
+                    user_message,
+                    conversation_manager=self.conversation_manager,
+                )
                 if linked_user:
-                    state.viin_linked_phone = linked_user.phone
-                    self.conversation_manager._save_conversation_state(state)
-                    response = (
-                        f"You're all set, {linked_user.fullname.split()[0] if linked_user.fullname else 'there'}! "
-                        f"I've linked this chat to {linked_user.phone}. What can I help you with?"
-                    )
+                    response = telegram_link_success_message(linked_user)
                 else:
-                    response = friendly_account_required_message("telegram")
+                    response = friendly_account_required_message(
+                        "telegram", phone=phone_attempt
+                    )
             finally:
                 if should_close:
                     db.close()
@@ -854,8 +858,9 @@ class AutobusNLUSystem:
             if not user and channel_type(user_id) == "telegram":
                 state = self.conversation_manager.get_conversation_state(user_id)
                 linked_phone = getattr(state, "viin_linked_phone", None)
-                if linked_phone:
-                    user = user_service.find_user_by_phone(linked_phone)
+                user = find_registered_user(
+                    db, user_id, linked_phone=linked_phone
+                )
 
             if user:
                 return {

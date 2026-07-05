@@ -146,6 +146,12 @@ def normalize_ghana_phone_number(phone: str) -> str:
         logger.info(f"Normalized phone: {phone} -> {normalized}")
         return normalized
 
+    # Case 1b: 11-digit local numbers (occasionally entered with an extra digit)
+    if len(cleaned_phone) == 11 and cleaned_phone.startswith('0'):
+        normalized = '233' + cleaned_phone[1:]
+        logger.info(f"Normalized phone (11-digit local): {phone} -> {normalized}")
+        return normalized
+
     # Case 2: Already in international format with 233
     # Example: 233550748724 -> 233550748724
     elif cleaned_phone.startswith('233') and len(cleaned_phone) == 12:
@@ -194,16 +200,16 @@ def convert_to_local_ghana_format(phone: str) -> str:
         logger.warning(f"Phone number has no digits: {phone}")
         return phone
 
-    # Case 1: International format with 233 prefix (12 digits total)
+    # Case 1: International format with 233 prefix (12–13 digits total)
     # Example: 233550748724 -> 0550748724
-    if cleaned_phone.startswith('233') and len(cleaned_phone) == 12:
+    if cleaned_phone.startswith('233') and len(cleaned_phone) in (12, 13):
         local_format = '0' + cleaned_phone[3:]
         logger.info(f"Converted phone to local format: {phone} -> {local_format}")
         return local_format
 
     # Case 2: Already in local format with 0
     # Example: 0550748724 -> 0550748724
-    elif cleaned_phone.startswith('0') and len(cleaned_phone) == 10:
+    elif cleaned_phone.startswith('0') and len(cleaned_phone) in (10, 11):
         logger.info(f"Phone already in local format: {phone} -> {cleaned_phone}")
         return cleaned_phone
 

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from core.user.model.User import User
 from utilities.phone_utils import convert_to_local_ghana_format, normalize_ghana_phone_number
 import logging
+import re
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -112,10 +113,18 @@ class UserService:
             normalize_ghana_phone_number(phone),
             convert_to_local_ghana_format(phone),
         ):
-            if not raw or raw in seen:
+            if not raw:
                 continue
-            seen.add(raw)
-            candidates.append(raw)
+            for variant in (raw, re.sub(r"\D", "", raw)):
+                if not variant or variant in seen:
+                    continue
+                seen.add(variant)
+                candidates.append(variant)
+                if variant.startswith("233") and len(variant) == 12:
+                    plus_variant = f"+{variant}"
+                    if plus_variant not in seen:
+                        seen.add(plus_variant)
+                        candidates.append(plus_variant)
 
         for candidate in candidates:
             user = (
@@ -125,6 +134,36 @@ class UserService:
             )
             if user:
                 return user
+
+        target = normalize_ghana_phone_number(phone)
+        if not target:
+            return None
+
+        def national_digits(value: str) -> Optional[str]:
+            digits = re.sub(r"\D", "", value or "")
+            if digits.startswith("233") and len(digits) >= 12:
+                return digits[-9:]
+            if digits.startswith("0") and len(digits) >= 10:
+                return digits[-9:]
+            if len(digits) == 9:
+                return digits
+            return None
+
+        target_national = national_digits(target) or national_digits(phone)
+
+        rows = (
+            self.db.query(User)
+            .filter(or_(User.phone.isnot(None), User.whatsapp_number.isnot(None)))
+            .all()
+        )
+        for user in rows:
+            for field in (user.phone, user.whatsapp_number):
+                if not field:
+                    continue
+                if normalize_ghana_phone_number(field) == target:
+                    return user
+                if target_national and national_digits(field) == target_national:
+                    return user
         return None
 
     # get user by phone number
