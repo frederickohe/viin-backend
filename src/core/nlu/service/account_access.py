@@ -5,6 +5,8 @@ import re
 from typing import Optional, Tuple, TYPE_CHECKING
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy.orm import object_session
 
 from core.user.model.User import User
 from core.user.service.user_service import UserService
@@ -102,16 +104,32 @@ def find_user_by_telegram_chat_id(db: Session, chat_id: str) -> Optional[User]:
     if not chat_id:
         return None
     chat_id = str(chat_id).strip()
+
+    try:
+        user = (
+            db.query(User)
+            .filter(User.agents[_TELEGRAM_AGENT]["chat_id"].astext == chat_id)
+            .first()
+        )
+        if user:
+            return user
+    except Exception:
+        logger.debug("JSONB telegram chat lookup failed; falling back to scan", exc_info=True)
+
     rows = db.query(User).filter(User.agents.isnot(None)).all()
     for user in rows:
         stored = (user.agents or {}).get(_TELEGRAM_AGENT, {}).get("chat_id")
-        if stored and str(stored) == chat_id:
+        if stored is not None and str(stored) == chat_id:
             return user
     return None
 
 
 def bind_telegram_chat(db: Session, user: User, chat_id: str) -> None:
-    user.set_agent(_TELEGRAM_AGENT, {"chat_id": str(chat_id)})
+    agents = dict(user.agents or {})
+    agents[_TELEGRAM_AGENT] = {"chat_id": str(chat_id)}
+    user.agents = agents
+    if object_session(user) is not None:
+        flag_modified(user, "agents")
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -174,6 +192,7 @@ def resolve_telegram_user(
     if conversation_manager is not None:
         state = conversation_manager.get_conversation_state(user_id)
         state.viin_linked_phone = user.phone
+        state.viin_linked_user_id = str(user.id)
         conversation_manager._save_conversation_state(state)
     return user
 
@@ -183,6 +202,7 @@ def find_registered_user(
     user_id: str,
     *,
     linked_phone: Optional[str] = None,
+    linked_user_id: Optional[str] = None,
 ) -> Optional[User]:
     """Resolve a registered Viin user for a channel identifier (phone or Telegram)."""
     merchant_id, channel_user_id = _parse_merchant_scoped_user_id(user_id)
@@ -196,6 +216,10 @@ def find_registered_user(
         chat_id = telegram_chat_id_from_user_id(user_id)
         if chat_id:
             user = find_user_by_telegram_chat_id(db, chat_id)
+            if user:
+                return user
+        if linked_user_id:
+            user = db.query(User).filter(User.id == linked_user_id).first()
             if user:
                 return user
         phone = (linked_phone or "").strip()

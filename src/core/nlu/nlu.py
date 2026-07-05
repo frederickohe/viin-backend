@@ -336,6 +336,13 @@ class AutobusNLUSystem:
             import traceback
             print(f"[EXECUTE_ACTION] ERROR: {e}")
             traceback.print_exc()
+            if str(e) == "registered_user_not_found":
+                return IntentHandlerResult(
+                    self.response_formatter.format_response(
+                        "", "account_required", channel=channel_type(user_id)
+                    ),
+                    None,
+                )
             return IntentHandlerResult(
                 self.response_formatter.format_response(intent, "error", message=str(e)),
                 None,
@@ -487,23 +494,33 @@ class AutobusNLUSystem:
             protected.update(INTENT_CATEGORIES.get(key, []))
         return intent in protected
 
+    def _telegram_link_state(self, user_id: str) -> tuple[Optional[str], Optional[str]]:
+        state = self.conversation_manager.get_conversation_state(user_id)
+        linked_phone = getattr(state, "viin_linked_phone", None)
+        linked_user_id = getattr(state, "viin_linked_user_id", None)
+        return linked_phone, linked_user_id
+
+    def _lookup_registered_user(self, user_id: str) -> Optional[User]:
+        db = self.db_session or SessionLocal()
+        should_close = self.db_session is None
+        try:
+            linked_phone, linked_user_id = self._telegram_link_state(user_id)
+            return find_registered_user(
+                db,
+                user_id,
+                linked_phone=linked_phone,
+                linked_user_id=linked_user_id,
+            )
+        finally:
+            if should_close:
+                db.close()
+
     def _has_registered_account(
         self, user_id: str, user_data: Optional[Dict[str, Any]]
     ) -> bool:
         if (user_data or {}).get("db_user_id"):
             return True
-        db = self.db_session or SessionLocal()
-        should_close = self.db_session is None
-        try:
-            state = self.conversation_manager.get_conversation_state(user_id)
-            linked_phone = getattr(state, "viin_linked_phone", None)
-            user = find_registered_user(
-                db, user_id, linked_phone=linked_phone
-            )
-            return user is not None
-        finally:
-            if should_close:
-                db.close()
+        return self._lookup_registered_user(user_id) is not None
 
     def _resolve_internal_user_id(
         self, user_id: str, user_data: Optional[Dict[str, Any]]
@@ -512,20 +529,10 @@ class AutobusNLUSystem:
         if internal_user_id:
             return str(internal_user_id)
 
-        db = self.db_session or SessionLocal()
-        should_close = self.db_session is None
-        try:
-            state = self.conversation_manager.get_conversation_state(user_id)
-            linked_phone = getattr(state, "viin_linked_phone", None)
-            user = find_registered_user(
-                db, user_id, linked_phone=linked_phone
-            )
-            if user:
-                return str(user.id)
-            raise ValueError("registered_user_not_found")
-        finally:
-            if should_close:
-                db.close()
+        user = self._lookup_registered_user(user_id)
+        if user:
+            return str(user.id)
+        raise ValueError("registered_user_not_found")
 
     @staticmethod
     def _is_merchant_owner_channel(
@@ -570,7 +577,12 @@ class AutobusNLUSystem:
         """Answer conversational intents with Postgres-backed task memory context."""
         from core.memory.service.task_memory_context import TaskMemoryContextService
 
-        internal_user_id = self._resolve_internal_user_id(user_id, user_data)
+        try:
+            internal_user_id = self._resolve_internal_user_id(user_id, user_data)
+        except ValueError:
+            return self.response_formatter.format_response(
+                "", "account_required", channel=channel_type(user_id)
+            )
 
         db = self.db_session or SessionLocal()
         should_close = self.db_session is None
@@ -730,7 +742,15 @@ class AutobusNLUSystem:
 
         db = SessionLocal()
         try:
-            internal_user_id = self._resolve_internal_user_id(user_id, user_data)
+            try:
+                internal_user_id = self._resolve_internal_user_id(user_id, user_data)
+            except ValueError:
+                return IntentHandlerResult(
+                    self.response_formatter.format_response(
+                        "", "account_required", channel=channel_type(user_id)
+                    ),
+                    None,
+                )
             svc = BriefingService(db)
             lowered = (user_message or "").lower()
             if "yesterday" in lowered or "last day" in lowered:
@@ -828,8 +848,9 @@ class AutobusNLUSystem:
 
     def _get_user_data(self, user_id: str) -> Optional[Dict]:
         """Fetch user data for personalized processing (merchant row, optionally scoped to a customer channel)."""
+        db = self.db_session or SessionLocal()
+        should_close = self.db_session is None
         try:
-            db = SessionLocal()
             user_service = UserService(db)
 
             merchant_id, channel_user_id = self._parse_merchant_scoped_user_id(user_id)
@@ -855,13 +876,17 @@ class AutobusNLUSystem:
                     else None,
                 }
 
-            user = user_service.find_user_by_phone(channel_user_id)
-            if not user and channel_type(user_id) == "telegram":
-                state = self.conversation_manager.get_conversation_state(user_id)
-                linked_phone = getattr(state, "viin_linked_phone", None)
+            user = None
+            if channel_type(user_id) == "telegram":
+                linked_phone, linked_user_id = self._telegram_link_state(user_id)
                 user = find_registered_user(
-                    db, user_id, linked_phone=linked_phone
+                    db,
+                    user_id,
+                    linked_phone=linked_phone,
+                    linked_user_id=linked_user_id,
                 )
+            else:
+                user = user_service.find_user_by_phone(channel_user_id)
 
             if user:
                 return {
@@ -880,7 +905,8 @@ class AutobusNLUSystem:
             logger.error(f"Error fetching user data for {user_id}: {e}")
             return None
         finally:
-            db.close()
+            if should_close:
+                db.close()
 
     def _process_media_inputs(
         self,
