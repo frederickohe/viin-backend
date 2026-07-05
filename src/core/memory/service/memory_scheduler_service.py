@@ -15,6 +15,7 @@ from core.memory.model.reminder import Reminder
 from core.memory.service.briefing_service import BriefingPeriod, BriefingService
 from core.user.model.User import User
 from core.webhooks.service.whatsapp_service import WhatsAppService
+from core.webhooks.service.telegram_service import TelegramService
 from utilities.dbconfig import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -122,20 +123,25 @@ class MemorySchedulerService:
             db.close()
 
     def _deliver_reminder(self, db: Session, r: Reminder) -> None:
-        user = db.query(User).filter(User.id == r.owner_user_id).first()
-        if not user:
-            r.status = ReminderStatus.FAILED
-            db.add(r)
-            db.commit()
-            return
+        owner_id = (r.owner_user_id or "").strip()
+        user = db.query(User).filter(User.id == owner_id).first()
 
-        channel = (r.delivery or {}).get("channel") or "whatsapp"
+        channel = (r.delivery or {}).get("channel")
+        if not channel:
+            if owner_id.startswith("tg:"):
+                channel = "telegram"
+            elif user:
+                channel = "whatsapp"
+            else:
+                channel = "whatsapp"
+
         subject = r.title
         body = r.body
+        log_user_id = user.id if user else owner_id
 
         log = MemoryDeliveryLog(
             id=uuid.uuid4().hex,
-            user_id=user.id,
+            user_id=log_user_id,
             channel=str(channel),
             kind="reminder",
             reminder_id=r.id,
@@ -151,16 +157,28 @@ class MemorySchedulerService:
         ok = False
         err: Optional[str] = None
 
-        if str(channel).lower() == "whatsapp":
-            phone_id = (os.getenv("WHATSAPP_phone_ID") or "").strip()
-            recipient = (getattr(user, "whatsapp_number", None) or getattr(user, "phone", None) or "").strip()
-            if not phone_id or not recipient:
-                err = "Missing WHATSAPP_phone_ID or recipient phone"
+        if str(channel).lower() == "telegram":
+            chat_id = owner_id.removeprefix("tg:").strip()
+            if not chat_id:
+                err = "Invalid Telegram owner_user_id"
             else:
                 msg = f"Reminder{': ' + subject if subject else ''}\n{body}"
-                ok = WhatsAppService().send_message(phone_id=phone_id, recipient_phone=recipient, message_text=msg)
+                ok = TelegramService().send_message(chat_id=chat_id, message_text=msg)
                 if not ok:
-                    err = "WhatsApp send_message failed"
+                    err = "Telegram send_message failed"
+        elif str(channel).lower() == "whatsapp":
+            if not user:
+                err = f"No user record for WhatsApp delivery (owner_user_id={owner_id})"
+            else:
+                phone_id = (os.getenv("WHATSAPP_phone_ID") or "").strip()
+                recipient = (getattr(user, "whatsapp_number", None) or getattr(user, "phone", None) or "").strip()
+                if not phone_id or not recipient:
+                    err = "Missing WHATSAPP_phone_ID or recipient phone"
+                else:
+                    msg = f"Reminder{': ' + subject if subject else ''}\n{body}"
+                    ok = WhatsAppService().send_message(phone_id=phone_id, recipient_phone=recipient, message_text=msg)
+                    if not ok:
+                        err = "WhatsApp send_message failed"
         else:
             err = f"Unsupported channel: {channel}"
 
@@ -171,7 +189,9 @@ class MemorySchedulerService:
         else:
             log.status = DeliveryStatus.FAILED
             log.error = err or "Delivery failed"
-            r.status = ReminderStatus.FAILED
+            # Keep SCHEDULED for Telegram/unresolved deliveries so overdue items stay visible.
+            if not (owner_id.startswith("tg:") and str(channel).lower() == "telegram"):
+                r.status = ReminderStatus.FAILED
 
         db.add(log)
         db.add(r)

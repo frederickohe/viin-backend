@@ -140,7 +140,7 @@ INTENTS = {
 
     # ===== TASK / BRIEFING INTENTS =====
     "daily_briefing": {
-        "description": "Give a daily briefing of the user's todos and reminders, listing the most pressing items first",
+        "description": "Give a daily briefing of the user's todos and reminders, including overdue items and tasks due on a specific day such as yesterday",
         "slots": [],
         "required_slots": [],
         "category": "task_management"

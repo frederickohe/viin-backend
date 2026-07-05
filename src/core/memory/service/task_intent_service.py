@@ -121,6 +121,8 @@ def parse_due_at(value: str, *, now: Optional[datetime] = None) -> datetime:
 
     if "tomorrow" in lowered:
         base_day = now.date() + timedelta(days=1)
+    elif "yesterday" in lowered:
+        base_day = now.date() - timedelta(days=1)
     elif "today" in lowered:
         base_day = now.date()
     else:
@@ -139,7 +141,7 @@ def parse_due_at(value: str, *, now: Optional[datetime] = None) -> datetime:
         minute,
         tzinfo=timezone.utc,
     )
-    if due <= now and "tomorrow" not in lowered:
+    if due <= now and "tomorrow" not in lowered and "yesterday" not in lowered:
         due += timedelta(days=1)
     return due
 

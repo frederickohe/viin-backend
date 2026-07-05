@@ -57,26 +57,30 @@ async def lifespan(app: FastAPI):
 
     # Register Telegram webhook when configured
     try:
-        auto_set = os.environ.get("TELEGRAM_AUTO_SET_WEBHOOK", "true").lower() == "true"
-        if auto_set:
-            from core.webhooks.service.telegram_service import TelegramService
+        from core.webhooks.service.telegram_service import TelegramService
 
-            telegram = TelegramService()
-            if telegram.is_configured and telegram.webhook_url:
-                if telegram.set_webhook():
-                    info = telegram.get_webhook_info() or {}
-                    logger.info(
-                        "[APP_STARTUP] Telegram webhook active: url=%s pending=%s",
-                        info.get("url"),
-                        info.get("pending_update_count"),
-                    )
-                else:
-                    logger.warning("[APP_STARTUP] Telegram webhook registration failed")
-            elif telegram.is_configured:
-                logger.warning(
-                    "[APP_STARTUP] TELEGRAM_BOT_TOKEN set but TELEGRAM_WEBHOOK_URL missing; "
-                    "skipping webhook registration"
+        telegram = TelegramService()
+        auto_set = os.environ.get("TELEGRAM_AUTO_SET_WEBHOOK", "true").lower() == "true"
+        if auto_set and telegram.is_configured and telegram.webhook_url:
+            if telegram.set_webhook():
+                info = telegram.get_webhook_info() or {}
+                logger.info(
+                    "[APP_STARTUP] Telegram webhook active: url=%s pending=%s",
+                    info.get("url"),
+                    info.get("pending_update_count"),
                 )
+            else:
+                logger.warning("[APP_STARTUP] Telegram webhook registration failed")
+        elif auto_set and telegram.is_configured:
+            logger.warning(
+                "[APP_STARTUP] TELEGRAM_BOT_TOKEN set but TELEGRAM_WEBHOOK_URL missing; "
+                "skipping webhook registration"
+            )
+        if telegram.is_configured:
+            if telegram.set_my_commands():
+                logger.info("[APP_STARTUP] Telegram bot command menu registered")
+            else:
+                logger.warning("[APP_STARTUP] Telegram bot command menu registration failed")
     except Exception as e:
         logger.warning(f"[APP_STARTUP] Telegram webhook init skipped: {e}")
     yield

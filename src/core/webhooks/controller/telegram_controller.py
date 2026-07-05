@@ -19,6 +19,34 @@ def _telegram_user_id(chat_id: int | str) -> str:
     return f"tg:{chat_id}"
 
 
+_TELEGRAM_COMMAND_MESSAGES = {
+    "/start": (
+        "Hi! I'm Viin — your personal task assistant.\n\n"
+        "Tap the menu button (☰) next to the message box to see commands, or try:\n"
+        "• /briefing — today's tasks\n"
+        "• /yesterday — what was due yesterday\n"
+        "• /addtask — add a task\n"
+        "• /help — full list of capabilities"
+    ),
+    "/help": (
+        "Here's what I can help with:\n\n"
+        "📋 Tasks & reminders\n"
+        "• Add tasks with or without a due date\n"
+        "• Daily or weekly briefings\n"
+        "• Check what was due yesterday\n\n"
+        "💬 General help\n"
+        "• Answer questions about your pending to-dos\n"
+        "• Conversational assistance\n\n"
+        "Try: \"remind me to call John tomorrow at 3pm\" or \"what do I need to do today?\""
+    ),
+    "/briefing": "What do I need to do today? Give me my daily briefing.",
+    "/tasks": "What do I need to do today? Give me my daily briefing.",
+    "/yesterday": "Was there something I needed to do yesterday?",
+    "/missed": "Was there something I needed to do yesterday?",
+    "/addtask": "I want to add a new task.",
+}
+
+
 def _verify_telegram_secret(
     x_telegram_bot_api_secret_token: Optional[str] = Header(None),
 ) -> None:
@@ -70,6 +98,10 @@ async def telegram_webhook(
             "I can read text messages for now. Send me a message and I'll help you out.",
         )
         return {"ok": True}
+
+    command_key = text.split()[0].split("@")[0].lower() if text.startswith("/") else ""
+    if command_key in _TELEGRAM_COMMAND_MESSAGES:
+        text = _TELEGRAM_COMMAND_MESSAGES[command_key]
 
     return await _handle_text_message(
         chat_id=chat_id,

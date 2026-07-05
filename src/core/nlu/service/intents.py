@@ -256,6 +256,8 @@ class IntentDetector:
         TASK BRIEFING:
         - Requests for a daily task/todo summary → daily_briefing
         - Examples: "daily briefing", "what are my tasks for today", "my todos today", "what do I need to do today", "what's most urgent"
+        - Questions about tasks due yesterday or missed items → daily_briefing
+        - Examples: "was there something to do yesterday", "what did I miss yesterday", "anything due yesterday", "what was due last day"
         - Requests for a weekly task/todo summary → weekly_briefing
         - Examples: "weekly briefing", "tasks this week", "what's on my plate this week", "my week ahead"
 

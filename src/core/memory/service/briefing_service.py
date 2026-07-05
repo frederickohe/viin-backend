@@ -61,6 +61,76 @@ class BriefingService:
         tasks = self.collect_tasks(owner_user_id=owner_user_id, period=period)
         return self.format_briefing(tasks=tasks, period=period)
 
+    def build_due_day_briefing(self, *, owner_user_id: str, day_offset: int = -1) -> str:
+        """List reminders that were due on a specific day (default: yesterday)."""
+        tasks = self.collect_tasks_due_on_day(owner_user_id=owner_user_id, day_offset=day_offset)
+        now = _now()
+        target_day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset)
+        if day_offset == -1:
+            label = "Yesterday"
+        elif day_offset == 0:
+            label = "Today"
+        elif day_offset == 1:
+            label = "Tomorrow"
+        else:
+            label = target_day.strftime("%A, %B %d")
+
+        date_str = target_day.strftime("%A, %B %d, %Y")
+        if not tasks:
+            return (
+                f"📋 {label} — {date_str}\n\n"
+                f"No reminders were due {label.lower()}."
+            )
+
+        lines = [f"📋 {label} — {date_str}", ""]
+        lines.append(
+            f"You had {len(tasks)} reminder{'s' if len(tasks) != 1 else ''} due {label.lower()}:"
+        )
+        lines.append("")
+        for i, task in enumerate(tasks, start=1):
+            lines.append(f"{i}. {self._task_detail(task, now=now)}")
+        return "\n".join(lines)
+
+    def collect_tasks_due_on_day(
+        self, *, owner_user_id: str, day_offset: int
+    ) -> List[BriefingTask]:
+        now = _now()
+        target_day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset)
+        day_end = target_day + timedelta(days=1)
+        tasks: List[BriefingTask] = []
+
+        reminders = (
+            self.db.query(Reminder)
+            .filter(Reminder.owner_user_id == owner_user_id)
+            .filter(Reminder.status.in_((ReminderStatus.SCHEDULED, ReminderStatus.SENT, ReminderStatus.FAILED)))
+            .filter(Reminder.due_at >= target_day)
+            .filter(Reminder.due_at < day_end)
+            .order_by(Reminder.due_at.asc())
+            .all()
+        )
+        for r in reminders:
+            due = _ensure_aware(r.due_at)
+            label = (r.title or r.body or "Reminder").strip()
+            tasks.append(
+                BriefingTask(
+                    title=label,
+                    source="reminder",
+                    due_at=due,
+                    list_name=None,
+                    is_overdue=due < now,
+                    has_urgent_keyword=bool(_URGENT_PATTERN.search(label)),
+                    sort_key=self._sort_key(
+                        is_overdue=due < now,
+                        has_urgent_keyword=bool(_URGENT_PATTERN.search(label)),
+                        due_at=due,
+                        created_at=r.created_at,
+                    ),
+                )
+            )
+
+        tasks.sort(key=lambda t: t.sort_key)
+        return tasks
+
     def collect_tasks(self, *, owner_user_id: str, period: BriefingPeriod) -> List[BriefingTask]:
         now = _now()
         window_end = self._window_end(now, period)
@@ -69,7 +139,7 @@ class BriefingService:
         reminders = (
             self.db.query(Reminder)
             .filter(Reminder.owner_user_id == owner_user_id)
-            .filter(Reminder.status == ReminderStatus.SCHEDULED)
+            .filter(Reminder.status.in_((ReminderStatus.SCHEDULED, ReminderStatus.SENT, ReminderStatus.FAILED)))
             .order_by(Reminder.due_at.asc())
             .all()
         )

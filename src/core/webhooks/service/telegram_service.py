@@ -6,6 +6,14 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+VIIN_BOT_COMMANDS: list[dict[str, str]] = [
+    {"command": "start", "description": "Start chatting with Viin"},
+    {"command": "help", "description": "See what Viin can do"},
+    {"command": "briefing", "description": "Today's tasks and overdue items"},
+    {"command": "yesterday", "description": "What was due yesterday"},
+    {"command": "addtask", "description": "Add a new task or reminder"},
+]
+
 
 class TelegramService:
     """Service for Telegram Bot API webhook setup and outbound messages."""
@@ -90,4 +98,10 @@ class TelegramService:
 
     def delete_webhook(self) -> bool:
         result = self._post("deleteWebhook", {"drop_pending_updates": False})
+        return result is not None
+
+    def set_my_commands(self, commands: Optional[list[dict[str, str]]] = None) -> bool:
+        """Register the bot command menu shown in Telegram."""
+        payload = {"commands": commands or VIIN_BOT_COMMANDS}
+        result = self._post("setMyCommands", payload)
         return result is not None

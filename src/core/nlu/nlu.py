@@ -427,7 +427,7 @@ class AutobusNLUSystem:
         elif intent in task_management_intents:
             if intent == "add_task":
                 return self._process_add_task_intent(user_id, slots, user_data)
-            return self._process_briefing_intent(user_id, intent, user_data)
+            return self._process_briefing_intent(user_id, intent, user_data, user_message)
         else:
             # Fallback for unhandled intents
             return IntentHandlerResult(
@@ -649,7 +649,11 @@ class AutobusNLUSystem:
             db.close()
 
     def _process_briefing_intent(
-        self, user_id: str, intent: str, user_data: Optional[Dict[str, Any]]
+        self,
+        user_id: str,
+        intent: str,
+        user_data: Optional[Dict[str, Any]],
+        user_message: str = "",
     ) -> IntentHandlerResult:
         """Build a daily or weekly to-do briefing from memory lists and reminders."""
         from core.memory.service.briefing_service import BriefingPeriod, BriefingService
@@ -657,15 +661,23 @@ class AutobusNLUSystem:
         db = SessionLocal()
         try:
             internal_user_id = self._resolve_internal_user_id(user_id, user_data)
-            period = (
-                BriefingPeriod.DAILY if intent == "daily_briefing" else BriefingPeriod.WEEKLY
-            )
-            msg = BriefingService(db).build_briefing(
-                owner_user_id=internal_user_id, period=period
-            )
+            svc = BriefingService(db)
+            lowered = (user_message or "").lower()
+            if "yesterday" in lowered or "last day" in lowered:
+                msg = svc.build_due_day_briefing(
+                    owner_user_id=internal_user_id,
+                    day_offset=-1,
+                )
+            else:
+                period = (
+                    BriefingPeriod.DAILY if intent == "daily_briefing" else BriefingPeriod.WEEKLY
+                )
+                msg = svc.build_briefing(
+                    owner_user_id=internal_user_id, period=period
+                )
             logger.info(
                 "Generated %s briefing for user %s (owner_user_id=%s)",
-                period.value,
+                "yesterday" if "yesterday" in lowered or "last day" in lowered else intent,
                 user_id,
                 internal_user_id,
             )
