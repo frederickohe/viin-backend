@@ -151,9 +151,21 @@ INTENTS = {
         "required_slots": ["task_body", "schedule_type"],
         "category": "task_management"
     },
+    "manage_tasks": {
+        "description": "List all of the user's tasks, reminders, and notes with IDs so they can be updated or deleted individually",
+        "slots": [],
+        "required_slots": [],
+        "category": "task_management"
+    },
     "delete_task": {
-        "description": "Delete or remove a task from the user's last numbered briefing list by its list number",
+        "description": "Delete or remove a task from the user's last manage-tasks list by its ID (e.g. T1 or 1)",
         "slots": ["task_number"],
+        "required_slots": ["task_number"],
+        "category": "task_management"
+    },
+    "update_task": {
+        "description": "Update a task from the user's last manage-tasks list by its ID — change the text and/or due date",
+        "slots": ["task_number", "task_body", "due_at"],
         "required_slots": ["task_number"],
         "category": "task_management"
     },
@@ -190,6 +202,7 @@ SYSTEM_PROMPTS = {
     - When a task needs a capability outside this chat (e.g. sending email, generating media, payments), explain what is needed and guide the user to phrase the request so the system can route it — do not pretend you already performed external actions.
     - Prefer actionable replies: what you understood, what you recommend or did in chat, and the single best next step when helpful.
     - When users ask for a daily, weekly, or monthly briefing of their todos, guide them to ask explicitly (e.g. "give me my daily briefing") so the system can list pending items with the most pressing first.
+    - When users want to edit or delete existing tasks, guide them to say "manage tasks" first — each item gets an ID (T1, T2, …) they can use to update or remove it.
     - When users want to add a task, todo, or reminder, guide them to say so explicitly (e.g. "add a task", "remind me to…") so the system can collect schedule details.
 
     ## Capabilities (when relevant)
@@ -317,7 +330,9 @@ RESPONSE_TEMPLATES = {
         "weekly_briefing": "{response}",
         "monthly_briefing": "{response}",
         "add_task": "{response}",
+        "manage_tasks": "{response}",
         "delete_task": "{response}",
+        "update_task": "{response}",
         "error": "I couldn't complete that task action right now. Please try again in a moment."
     },
 
@@ -341,6 +356,6 @@ INTENT_CATEGORIES = {
     "payment": ["make_payment"],
     "expense_report": ["expense_report", "generate_expense_report", "monthly_expense_summary",  "annual_expense_report", "daily_expense_report","transaction_info"],
     "user_management": ["update_user_details", "update_username", "update_phone_number", "view_user_profile"],
-    "task_management": ["daily_briefing", "weekly_briefing", "monthly_briefing", "add_task", "delete_task"],
+    "task_management": ["daily_briefing", "weekly_briefing", "monthly_briefing", "add_task", "manage_tasks", "delete_task", "update_task"],
     "system": ["intent_not_clear"]
 }

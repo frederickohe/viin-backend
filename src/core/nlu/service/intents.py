@@ -262,11 +262,29 @@ class IntentDetector:
         - "remind me to [task] in X minutes/hours" → add_task with schedule_type=deadline and due_at="in X minutes"
         - Example: "remind me to text Anna in 2 minutes" → task_body="text Anna", schedule_type="deadline", due_at="in 2 minutes"
 
-        DELETE TASK (by number from last briefing list):
-        - User wants to remove/delete/cancel an item from their last numbered briefing → delete_task
-        - Examples: "delete 1", "remove 2", "cancel 3", "delete task 1", "remove item 2"
-        - Slot task_number is the number from the briefing list (1-based integer as string)
-        - Only use delete_task when the user references a number to remove from a prior briefing list
+        DELETE TASK (by ID from manage-tasks list):
+        - User wants to remove an item using its manage-tasks ID → delete_task
+        - Examples: "delete T1", "remove 2", "cancel T3"
+        - Slot task_number is the ID number (1, 2, 3 — with or without a T prefix)
+
+        MANAGE TASKS:
+        - User wants to view, edit, or delete their tasks individually → manage_tasks
+        - Examples: "manage tasks", "manage my tasks", "edit my tasks", "show tasks to edit"
+        - This lists all items with IDs like T1, T2, T3 for follow-up delete/update commands
+
+        DELETE TASK (by ID from manage-tasks list):
+        - User wants to remove an item using its manage-tasks ID → delete_task
+        - Examples: "delete T1", "remove 2", "cancel T3"
+        - Slot task_number is the ID number (1, 2, 3 — with or without a T prefix)
+
+        UPDATE TASK (by ID from manage-tasks list):
+        - User wants to change an item from their manage-tasks list → update_task
+        - Examples: "update T1 to buy eggs", "change 2 to call John", "update T3 due tomorrow at 3pm"
+        - Slots:
+          • task_number — required (ID like 1 or T1)
+          • task_body — new description/text (optional if due_at provided)
+          • due_at — new due date/time for reminders (optional if task_body provided)
+        - If continuing update_task, keep intent update_task until task_number and at least one of task_body/due_at are filled
         """
         
         current_intent_context = f"CURRENT_INTENT: {current_intent if current_intent else 'Intent Extraction'}"
@@ -379,14 +397,24 @@ class IntentDetector:
         SLOTS: {{"task_body": "call the supplier", "schedule_type": "open"}}
         MISSING:
 
-        User deletes from briefing list: "delete 2"
+        User starts manage tasks: "manage my tasks"
+        INTENT: manage_tasks
+        SLOTS: {{}}
+        MISSING:
+
+        User deletes from manage list: "delete T2"
         INTENT: delete_task
         SLOTS: {{"task_number": "2"}}
         MISSING:
 
-        User deletes from briefing list: "remove task 1"
-        INTENT: delete_task
-        SLOTS: {{"task_number": "1"}}
+        User updates from manage list: "update T1 to buy eggs"
+        INTENT: update_task
+        SLOTS: {{"task_number": "1", "task_body": "buy eggs"}}
+        MISSING:
+
+        User updates due date: "update 3 due tomorrow at 3pm"
+        INTENT: update_task
+        SLOTS: {{"task_number": "3", "due_at": "tomorrow at 3pm"}}
         MISSING:
         Examples end.
 

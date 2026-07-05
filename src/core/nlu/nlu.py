@@ -24,6 +24,12 @@ from core.nlu.service.conversation_manager import ConversationManager
 from core.nlu.service.intent_handler_result import IntentHandlerResult
 from core.nlu.service.process_message_result import ProcessMessageResult
 from core.nlu.service.payment_command_parser import try_parse_payment_command
+from core.nlu.service.payment_confirmation import (
+    is_affirmative_response,
+    is_declining_response,
+    resolve_payment_slots,
+    should_handle_payment_confirmation,
+)
 from core.nlu.service.security import SecurityManager
 from core.nlu.service.date_selection_manager import DateSelectionManager, DateOption
 from core.nlu.service.account_access import (
@@ -46,7 +52,11 @@ from utilities.crypto import decrypt_secret
 logger = logging.getLogger(__name__)
 
 _DELETE_TASK_RE = re.compile(
-    r"^\s*(?:delete|remove|cancel)(?:\s+(?:task|item|#))?[\s#]*(\d+)\s*$",
+    r"^\s*(?:delete|remove|cancel)(?:\s+(?:task|item))?\s+#?(?:T)?(\d+)\s*$",
+    re.IGNORECASE,
+)
+_UPDATE_TASK_RE = re.compile(
+    r"^\s*(?:update|change|edit)(?:\s+(?:task|item))?\s+#?(?:T)?(\d+)\s+(?:to\s+)?(.+)$",
     re.IGNORECASE,
 )
 
@@ -118,6 +128,89 @@ class AutobusNLUSystem:
             return int(match.group(1))
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _try_parse_update_task_command(user_message: str) -> Optional[Dict[str, str]]:
+        match = _UPDATE_TASK_RE.match((user_message or "").strip())
+        if not match:
+            return None
+        from core.memory.service.task_management_service import TaskManagementService
+
+        try:
+            task_number = str(int(match.group(1)))
+        except (TypeError, ValueError):
+            return None
+        payload = TaskManagementService.parse_update_payload(match.group(2))
+        slots = {"task_number": task_number}
+        slots.update({k: v for k, v in payload.items() if v})
+        return slots
+
+    def _clear_payment_confirmation_state(self, user_id: str) -> None:
+        state = self.conversation_manager.get_conversation_state(user_id)
+        state.waiting_for_payment_confirmation = False
+        state.pending_payment_dto = {}
+        state.current_intent = ""
+        state.collected_slots = {}
+        self.conversation_manager._save_conversation_state(state)
+
+    def _try_handle_payment_confirmation(
+        self,
+        user_id: str,
+        user_message: str,
+        state,
+    ) -> Optional[ProcessMessageResult]:
+        if not should_handle_payment_confirmation(
+            user_message=user_message,
+            current_intent=state.current_intent,
+            waiting_for_payment_confirmation=state.waiting_for_payment_confirmation,
+            collected_slots=state.collected_slots,
+            pending_payment_dto=state.pending_payment_dto,
+            conversation_history=state.conversation_history,
+        ):
+            return None
+
+        if is_declining_response(user_message):
+            response = self.response_formatter.format_response("", "payment_cancelled")
+            self._clear_payment_confirmation_state(user_id)
+            self.conversation_manager.update_conversation_history(user_id, "assistant", response)
+            return self._as_result(response)
+
+        if not is_affirmative_response(user_message):
+            return None
+
+        slots = resolve_payment_slots(
+            collected_slots=state.collected_slots,
+            pending_payment_dto=state.pending_payment_dto,
+            conversation_history=state.conversation_history,
+        )
+        if not slots:
+            response = self.response_formatter.format_response(
+                "",
+                "confirm_again",
+                message="I still need the payment amount. For example: send 2 cedis to Anna 0207926310.",
+            )
+            self.conversation_manager.update_conversation_history(user_id, "assistant", response)
+            return self._as_result(response)
+
+        user_data = self._get_user_data(user_id)
+        if not self._has_registered_account(user_id, user_data):
+            response = self.response_formatter.format_response(
+                "", "account_required", channel=channel_type(user_id)
+            )
+            self.conversation_manager.update_conversation_history(user_id, "assistant", response)
+            return self._as_result(response)
+
+        outcome = self._execute_action(
+            user_id,
+            "make_payment",
+            slots,
+            user_message,
+            state.conversation_history,
+        )
+        result = self._terminal_listener_apply(user_id, outcome)
+        self._clear_payment_confirmation_state(user_id)
+        self.conversation_manager.update_conversation_history(user_id, "assistant", result.text)
+        return result
 
 
 
@@ -205,6 +298,14 @@ class AutobusNLUSystem:
         else:
             self.conversation_manager.update_conversation_history(user_id, "user", user_message)
 
+        payment_confirmation_result = self._try_handle_payment_confirmation(
+            user_id,
+            user_message,
+            state,
+        )
+        if payment_confirmation_result is not None:
+            return payment_confirmation_result
+
         # Process multimodal inputs (images/audio)
         media_context = {}
         if image_media_id or image_url or audio_media_id or audio_url:
@@ -220,14 +321,24 @@ class AutobusNLUSystem:
         # Detect intent and extract slots
         logger.info("Detecting intent for user %s (current_intent=%s)", user_id, state.current_intent)
         quick_delete_index = self._try_parse_delete_task_command(user_message)
+        quick_update_slots = (
+            None if quick_delete_index is not None else self._try_parse_update_task_command(user_message)
+        )
         quick_payment_slots = (
-            None if quick_delete_index is not None else try_parse_payment_command(user_message)
+            None
+            if quick_delete_index is not None or quick_update_slots is not None
+            else try_parse_payment_command(user_message)
         )
         if quick_delete_index is not None:
             intent = "delete_task"
             extracted_slots = {"task_number": str(quick_delete_index)}
             missing_slots = []
             logger.info("Parsed delete-task command for user %s: index=%s", user_id, quick_delete_index)
+        elif quick_update_slots is not None:
+            intent = "update_task"
+            extracted_slots = quick_update_slots
+            missing_slots = []
+            logger.info("Parsed update-task command for user %s: slots=%s", user_id, quick_update_slots)
         elif quick_payment_slots is not None:
             intent = "make_payment"
             extracted_slots = quick_payment_slots
@@ -541,8 +652,12 @@ class AutobusNLUSystem:
         elif intent in task_management_intents:
             if intent == "add_task":
                 return self._process_add_task_intent(user_id, slots, user_data)
+            if intent == "manage_tasks":
+                return self._process_manage_tasks_intent(user_id, user_data)
             if intent == "delete_task":
                 return self._process_delete_task_intent(user_id, slots, user_data)
+            if intent == "update_task":
+                return self._process_update_task_intent(user_id, slots, user_data)
             return self._process_briefing_intent(user_id, intent, user_data, user_message)
         else:
             # Fallback for unhandled intents
@@ -847,9 +962,6 @@ class AutobusNLUSystem:
                 tasks = svc.collect_tasks(owner_user_id=internal_user_id, period=period)
                 msg = svc.format_briefing(tasks=tasks, period=period)
 
-            state = self.conversation_manager.get_conversation_state(user_id)
-            state.pending_briefing_tasks = svc.tasks_to_refs(tasks)
-            self.conversation_manager._save_conversation_state(state)
             logger.info(
                 "Generated %s briefing for user %s (owner_user_id=%s)",
                 "yesterday" if "yesterday" in lowered or "last day" in lowered else intent,
@@ -871,21 +983,88 @@ class AutobusNLUSystem:
         finally:
             db.close()
 
+    @staticmethod
+    def _managed_task_refs(state) -> List[Dict[str, Any]]:
+        refs = list(getattr(state, "pending_managed_tasks", None) or [])
+        if refs:
+            return refs
+        return list(getattr(state, "pending_briefing_tasks", None) or [])
+
+    @staticmethod
+    def _save_managed_task_refs(state, task_refs: List[Dict[str, Any]]) -> None:
+        from core.memory.service.task_management_service import make_ref_id
+
+        renumbered: List[Dict[str, Any]] = []
+        for i, ref in enumerate(task_refs, start=1):
+            updated = dict(ref)
+            updated["index"] = i
+            updated["ref_id"] = make_ref_id(i)
+            renumbered.append(updated)
+        state.pending_managed_tasks = renumbered
+        state.pending_briefing_tasks = renumbered
+
+    def _process_manage_tasks_intent(
+        self,
+        user_id: str,
+        user_data: Optional[Dict[str, Any]],
+    ) -> IntentHandlerResult:
+        """List all tasks with IDs for individual update/delete."""
+        from core.memory.service.task_management_service import TaskManagementService
+
+        db = SessionLocal()
+        try:
+            try:
+                internal_user_id = self._resolve_internal_user_id(user_id, user_data)
+            except ValueError:
+                return IntentHandlerResult(
+                    self.response_formatter.format_response(
+                        "", "account_required", channel=channel_type(user_id)
+                    ),
+                    None,
+                )
+
+            svc = TaskManagementService(db)
+            tasks = svc.list_manageable_tasks(owner_user_id=internal_user_id)
+            msg = svc.format_manage_list(tasks=tasks)
+
+            state = self.conversation_manager.get_conversation_state(user_id)
+            self._save_managed_task_refs(state, svc.tasks_to_refs(tasks))
+            self.conversation_manager._save_conversation_state(state)
+
+            logger.info(
+                "Generated manage-tasks list for user %s (owner=%s, count=%s)",
+                user_id,
+                internal_user_id,
+                len(tasks),
+            )
+            return IntentHandlerResult(msg, 200)
+        except Exception as e:
+            logger.error("Manage tasks failed for user %s: %s", user_id, e, exc_info=True)
+            return IntentHandlerResult(
+                self.response_formatter.format_response(
+                    "manage_tasks",
+                    "error",
+                    message="I couldn't load your tasks right now.",
+                ),
+                None,
+            )
+        finally:
+            db.close()
+
     def _process_delete_task_intent(
         self,
         user_id: str,
         slots: Dict[str, Any],
         user_data: Optional[Dict[str, Any]],
     ) -> IntentHandlerResult:
-        """Remove a task from the user's last numbered briefing list."""
-        from core.memory.service.briefing_service import BriefingService
+        """Remove a task from the user's last manage-tasks list."""
+        from core.memory.service.task_management_service import TaskManagementService, parse_task_number
 
-        raw_number = slots.get("task_number")
         try:
-            task_index = int(str(raw_number).strip())
-        except (TypeError, ValueError, AttributeError):
+            task_index = parse_task_number(slots.get("task_number"))
+        except ValueError:
             return IntentHandlerResult(
-                "Please say which item to remove, e.g. \"delete 1\" or \"remove 2\".",
+                'Please say which item to remove, e.g. "delete T1" or "remove 2".',
                 None,
             )
 
@@ -902,8 +1081,8 @@ class AutobusNLUSystem:
                 )
 
             state = self.conversation_manager.get_conversation_state(user_id)
-            task_refs = list(state.pending_briefing_tasks or [])
-            svc = BriefingService(db)
+            task_refs = self._managed_task_refs(state)
+            svc = TaskManagementService(db)
             msg = svc.delete_task_at_index(
                 owner_user_id=internal_user_id,
                 task_refs=task_refs,
@@ -912,11 +1091,11 @@ class AutobusNLUSystem:
 
             if task_refs:
                 del task_refs[task_index - 1]
-                state.pending_briefing_tasks = task_refs
+                self._save_managed_task_refs(state, task_refs)
                 self.conversation_manager._save_conversation_state(state)
 
             logger.info(
-                "Deleted briefing task #%s for user %s (owner=%s)",
+                "Deleted managed task #%s for user %s (owner=%s)",
                 task_index,
                 user_id,
                 internal_user_id,
@@ -939,6 +1118,83 @@ class AutobusNLUSystem:
                     "delete_task",
                     "error",
                     message="I couldn't remove that item right now. Please try again.",
+                ),
+                None,
+            )
+        finally:
+            db.close()
+
+    def _process_update_task_intent(
+        self,
+        user_id: str,
+        slots: Dict[str, Any],
+        user_data: Optional[Dict[str, Any]],
+    ) -> IntentHandlerResult:
+        """Update a task from the user's last manage-tasks list."""
+        from core.memory.service.task_management_service import TaskManagementService, parse_task_number
+
+        try:
+            task_index = parse_task_number(slots.get("task_number"))
+        except ValueError:
+            return IntentHandlerResult(
+                'Please say which item to update, e.g. "update T1 to buy eggs".',
+                None,
+            )
+
+        db = SessionLocal()
+        try:
+            try:
+                internal_user_id = self._resolve_internal_user_id(user_id, user_data)
+            except ValueError:
+                return IntentHandlerResult(
+                    self.response_formatter.format_response(
+                        "", "account_required", channel=channel_type(user_id)
+                    ),
+                    None,
+                )
+
+            state = self.conversation_manager.get_conversation_state(user_id)
+            task_refs = self._managed_task_refs(state)
+            svc = TaskManagementService(db)
+            msg = svc.update_task_at_index(
+                owner_user_id=internal_user_id,
+                task_refs=task_refs,
+                index=task_index,
+                task_body=(slots.get("task_body") or "").strip() or None,
+                due_at_raw=(slots.get("due_at") or "").strip() or None,
+            )
+
+            if task_refs and task_index <= len(task_refs):
+                new_title = (slots.get("task_body") or "").strip()
+                if new_title:
+                    task_refs[task_index - 1]["title"] = new_title
+                    self._save_managed_task_refs(state, task_refs)
+                    self.conversation_manager._save_conversation_state(state)
+
+            logger.info(
+                "Updated managed task #%s for user %s (owner=%s)",
+                task_index,
+                user_id,
+                internal_user_id,
+            )
+            return IntentHandlerResult(msg, 200)
+        except ValueError as e:
+            return IntentHandlerResult(str(e), None)
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, str) else str(e.detail)
+            return IntentHandlerResult(
+                self.response_formatter.format_response(
+                    "update_task", "error", message=detail
+                ),
+                None,
+            )
+        except Exception as e:
+            logger.error("Update task failed for user %s: %s", user_id, e, exc_info=True)
+            return IntentHandlerResult(
+                self.response_formatter.format_response(
+                    "update_task",
+                    "error",
+                    message="I couldn't update that item right now. Please try again.",
                 ),
                 None,
             )

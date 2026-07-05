@@ -48,13 +48,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[APP_STARTUP] Database init skipped: {e}")
 
-    # Start memory scheduler (reminders + briefing delivery logs)
-    try:
-        from core.memory.service.memory_scheduler_service import MemorySchedulerService
+    # Start memory scheduler on one worker only (see gunicorn.conf.py post_fork).
+    scheduler_enabled = os.environ.get("MEMORY_SCHEDULER_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if scheduler_enabled:
+        try:
+            from core.memory.service.memory_scheduler_service import MemorySchedulerService
 
-        MemorySchedulerService().start()
-    except Exception as e:
-        logger.warning(f"[APP_STARTUP] Memory scheduler init skipped: {e}")
+            MemorySchedulerService().start()
+        except Exception as e:
+            logger.warning(f"[APP_STARTUP] Memory scheduler init skipped: {e}")
+    else:
+        logger.info("[APP_STARTUP] Memory scheduler disabled for this worker")
 
     # Register Telegram webhook when configured
     try:

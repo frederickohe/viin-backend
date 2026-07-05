@@ -259,6 +259,44 @@ class MemoryService:
         self.db.refresh(r)
         return r
 
+    def update_reminder(
+        self,
+        *,
+        owner_user_id: str,
+        reminder_id: str,
+        body: Optional[str] = None,
+        due_at: Optional[datetime] = None,
+        title: Optional[str] = None,
+    ) -> Reminder:
+        r = (
+            self.db.query(Reminder)
+            .filter(Reminder.id == reminder_id)
+            .filter(Reminder.owner_user_id == owner_user_id)
+            .first()
+        )
+        if not r:
+            raise HTTPException(status_code=404, detail="Reminder not found")
+        if r.status == ReminderStatus.CANCELLED:
+            raise HTTPException(status_code=400, detail="That reminder has been cancelled.")
+
+        if body is not None:
+            cleaned = body.strip()
+            if not cleaned:
+                raise HTTPException(status_code=400, detail="Reminder text cannot be empty.")
+            r.body = cleaned
+            r.title = (title or cleaned)[:200]
+        elif title is not None:
+            r.title = title.strip()[:200] or r.title
+
+        if due_at is not None:
+            r.due_at = due_at
+
+        r.updated_at = _now()
+        self.db.add(r)
+        self.db.commit()
+        self.db.refresh(r)
+        return r
+
     def list_lists(self, *, owner_user_id: str, limit: int = 50) -> List[MemoryList]:
         q = (
             self.db.query(MemoryList)
@@ -319,6 +357,67 @@ class MemoryService:
         item.updated_at = _now()
         self.db.add(item)
         self.db.commit()
+
+    def update_list_item(
+        self,
+        *,
+        owner_user_id: str,
+        list_id: str,
+        item_id: str,
+        text: str,
+    ) -> MemoryListItem:
+        lst = (
+            self.db.query(MemoryList)
+            .filter(MemoryList.id == list_id)
+            .filter(MemoryList.owner_user_id == owner_user_id)
+            .filter(MemoryList.deleted_at.is_(None))
+            .first()
+        )
+        if not lst:
+            raise HTTPException(status_code=404, detail="List not found")
+
+        item = (
+            self.db.query(MemoryListItem)
+            .filter(MemoryListItem.id == item_id)
+            .filter(MemoryListItem.list_id == list_id)
+            .filter(MemoryListItem.deleted_at.is_(None))
+            .first()
+        )
+        if not item:
+            raise HTTPException(status_code=404, detail="List item not found")
+
+        cleaned = (text or "").strip()
+        if not cleaned:
+            raise HTTPException(status_code=400, detail="Task text cannot be empty.")
+
+        item.text = cleaned
+        item.updated_at = _now()
+        self.db.add(item)
+        self.db.commit()
+        self.db.refresh(item)
+        return item
+
+    def update_memory_item(
+        self,
+        *,
+        owner_user_id: str,
+        item_id: str,
+        text: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> MemoryItem:
+        item = self.get_memory_item(owner_user_id=owner_user_id, item_id=item_id)
+        if text is not None:
+            cleaned = text.strip()
+            if not cleaned:
+                raise HTTPException(status_code=400, detail="Note text cannot be empty.")
+            item.text = cleaned
+        if title is not None:
+            item.title = title.strip() or None
+        item.updated_at = _now()
+        self.db.add(item)
+        self.db.commit()
+        self.db.refresh(item)
+        return item
 
     def complete_list_item(
         self, *, owner_user_id: str, list_id: str, item_id: str

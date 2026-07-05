@@ -30,6 +30,116 @@ class PaystackService:
         random_str = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
         return f"TX-{timestamp}-{random_str}"
     
+    def _build_initialize_payload(
+        self,
+        *,
+        user_id: str,
+        user: User,
+        request: PaystackInitializeRequest,
+        reference: str,
+    ) -> dict:
+        payload = {
+            "email": request.email,
+            "amount": request.amount,
+            "reference": reference,
+            "metadata": {
+                "user_id": user_id,
+                "user_email": user.email,
+                **(request.metadata if request.metadata else {}),
+            },
+        }
+        if request.callback_url:
+            payload["callback_url"] = request.callback_url
+        if request.channels:
+            payload["channels"] = request.channels
+        return payload
+
+    def _persist_initialized_transaction(
+        self,
+        *,
+        user_id: str,
+        request: PaystackInitializeRequest,
+        reference: str,
+        payload: dict,
+        result_data: dict,
+    ) -> PaystackInitializeResponse:
+        transaction = Transaction(
+            id=str(UniqueIdGenerator.generate()),
+            user_id=user_id,
+            reference=reference,
+            access_code=result_data["access_code"],
+            amount=request.amount,
+            email=request.email,
+            status="pending",
+            transaction_metadata=payload["metadata"],
+            created_at=datetime.utcnow(),
+        )
+        self.db.add(transaction)
+        self.db.commit()
+
+        return PaystackInitializeResponse(
+            status=True,
+            message="Transaction initialized successfully",
+            authorization_url=result_data["authorization_url"],
+            access_code=result_data["access_code"],
+            reference=reference,
+        )
+
+    def initialize_transaction_sync(
+        self,
+        user_id: str,
+        request: PaystackInitializeRequest,
+    ) -> PaystackInitializeResponse:
+        """Initialize Paystack checkout from synchronous NLU handlers."""
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        reference = request.reference or self.generate_reference()
+        payload = self._build_initialize_payload(
+            user_id=user_id,
+            user=user,
+            request=request,
+            reference=reference,
+        )
+
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    f"{self.base_url}/transaction/initialize",
+                    headers=self.headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+                result = response.json()
+
+            if result["status"]:
+                return self._persist_initialized_transaction(
+                    user_id=user_id,
+                    request=request,
+                    reference=reference,
+                    payload=payload,
+                    result_data=result["data"],
+                )
+
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("message", "Failed to initialize transaction"),
+            )
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Paystack API error: {e.response.text}",
+            ) from e
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Payment service unavailable: {str(e)}",
+            ) from e
+
     async def initialize_transaction(
         self, 
         user_id: str,
@@ -39,7 +149,6 @@ class PaystackService:
         Initialize a Paystack transaction
         This is called from your backend to get a Paystack checkout URL.
         """
-        # Get user from database
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(
@@ -47,26 +156,13 @@ class PaystackService:
                 detail="User not found"
             )
         
-        # Use provided reference or generate one
         reference = request.reference or self.generate_reference()
-        
-        # Prepare payload for Paystack
-        payload = {
-            "email": request.email,
-            "amount": request.amount,  # Already in kobo
-            "reference": reference,
-            "metadata": {
-                "user_id": user_id,
-                "user_email": user.email,
-                **(request.metadata if request.metadata else {})
-            }
-        }
-        
-        # Add optional fields if provided
-        if request.callback_url:
-            payload["callback_url"] = request.callback_url
-        if request.channels:
-            payload["channels"] = request.channels
+        payload = self._build_initialize_payload(
+            user_id=user_id,
+            user=user,
+            request=request,
+            reference=reference,
+        )
         
         try:
             async with httpx.AsyncClient() as client:
@@ -80,33 +176,18 @@ class PaystackService:
                 result = response.json()
                 
                 if result["status"]:
-                    # Store transaction in database
-                    transaction = Transaction(
-                        id=str(UniqueIdGenerator.generate()),
+                    return self._persist_initialized_transaction(
                         user_id=user_id,
+                        request=request,
                         reference=reference,
-                        access_code=result["data"]["access_code"],
-                        amount=request.amount,
-                        email=request.email,
-                        status="pending",
-                        transaction_metadata=payload["metadata"],
-                        created_at=datetime.utcnow()
+                        payload=payload,
+                        result_data=result["data"],
                     )
-                    self.db.add(transaction)
-                    self.db.commit()
-                    
-                    return PaystackInitializeResponse(
-                        status=True,
-                        message="Transaction initialized successfully",
-                        authorization_url=result["data"]["authorization_url"],
-                        access_code=result["data"]["access_code"],
-                        reference=reference
-                    )
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=result.get("message", "Failed to initialize transaction")
-                    )
+
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=result.get("message", "Failed to initialize transaction")
+                )
                     
         except httpx.HTTPStatusError as e:
             error_detail = f"Paystack API error: {e.response.text}"

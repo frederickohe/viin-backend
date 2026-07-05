@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import redis
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,9 @@ from core.webhooks.service.whatsapp_service import WhatsAppService
 from utilities.dbconfig import SessionLocal
 
 logger = logging.getLogger(__name__)
+
+_REMINDER_DELIVERY_LOCK_PREFIX = "viin:reminder:deliver:"
+_REMINDER_DELIVERY_LOCK_SECONDS = 120
 
 
 def _now() -> datetime:
@@ -169,7 +173,35 @@ class MemorySchedulerService:
         finally:
             db.close()
 
+    @staticmethod
+    def _acquire_reminder_delivery_lock(reminder_id: str) -> bool:
+        """Claim reminder delivery so only one worker sends notifications."""
+        try:
+            client = redis.Redis(
+                host=os.getenv("REDIS_HOST", "localhost"),
+                port=int(os.getenv("REDIS_PORT", 6379)),
+                password=os.getenv("REDIS_PASSWORD") or None,
+                db=0,
+                decode_responses=True,
+                socket_connect_timeout=2,
+            )
+            key = f"{_REMINDER_DELIVERY_LOCK_PREFIX}{reminder_id}"
+            return bool(
+                client.set(key, "1", nx=True, ex=_REMINDER_DELIVERY_LOCK_SECONDS)
+            )
+        except Exception as exc:
+            logger.warning(
+                "[MEMORY_REMINDER] Redis delivery lock unavailable reminder_id=%s err=%s",
+                reminder_id,
+                exc,
+            )
+            return True
+
     def _deliver_reminder(self, db: Session, r: Reminder) -> None:
+        if not self._acquire_reminder_delivery_lock(r.id):
+            logger.debug("[MEMORY_REMINDER] skipping duplicate delivery reminder_id=%s", r.id)
+            return
+
         owner_id = (r.owner_user_id or "").strip()
         user = db.query(User).filter(User.id == owner_id).first()
 

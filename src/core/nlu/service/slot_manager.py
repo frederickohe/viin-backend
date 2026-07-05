@@ -55,6 +55,8 @@ class SlotManager:
         """Get list of missing required slots for an intent"""
         if intent == "add_task":
             return self._missing_add_task_slots(current_slots)
+        if intent == "update_task":
+            return self._missing_update_task_slots(current_slots)
 
         if intent not in self.intents:
             return []
@@ -101,6 +103,12 @@ class SlotManager:
                 validated_slots["repeat_frequency"] = "weekly"
             elif freq in ("monthly", "month"):
                 validated_slots["repeat_frequency"] = "monthly"
+
+        if intent == "update_task":
+            body = (validated_slots.get("task_body") or "").strip()
+            if body.lower().startswith("due "):
+                validated_slots["due_at"] = body[4:].strip()
+                validated_slots.pop("task_body", None)
 
         if intent == "make_payment":
             method = self._normalize_payment_method(validated_slots.get("payment_method"))
@@ -212,7 +220,16 @@ class SlotManager:
             ),
             "repeat_frequency": "How often should it repeat? (daily, weekly, or monthly)",
             "repeat_time": "What time should it repeat each cycle? (e.g. 8am, 5:30pm)",
+            "task_number": (
+                "Which task ID should I change? Use the ID from manage tasks, e.g. T1 or 1."
+            ),
         }
+
+        if intent == "update_task" and slot == "task_body":
+            return (
+                'What should it say, or when should it be due? '
+                'Examples: "buy eggs" or "due tomorrow at 3pm".'
+            )
 
         if slot in slot_descriptions:
             return slot_descriptions[slot]
@@ -244,6 +261,15 @@ class SlotManager:
             return []
 
         return ["schedule_type"]
+
+    def _missing_update_task_slots(self, current_slots: Dict) -> List[str]:
+        if not (current_slots.get("task_number") or "").strip():
+            return ["task_number"]
+        has_body = bool((current_slots.get("task_body") or "").strip())
+        has_due = bool((current_slots.get("due_at") or "").strip())
+        if not has_body and not has_due:
+            return ["task_body"]
+        return []
 
     def generate_slot_prompt(self, intent: str, missing_slots: List[str]) -> str:
         """Generate natural language prompt for missing slots with intent-aware context"""

@@ -33,6 +33,7 @@ class ConversationState:
     viin_linked_phone: Optional[str] = None
     viin_linked_user_id: Optional[str] = None
     pending_briefing_tasks: List[Dict] = None
+    pending_managed_tasks: List[Dict] = None
 
     def __post_init__(self):
         if not self.conversation_id:
@@ -51,6 +52,8 @@ class ConversationState:
             self.pending_expense_dates = []
         if self.pending_briefing_tasks is None:
             self.pending_briefing_tasks = []
+        if self.pending_managed_tasks is None:
+            self.pending_managed_tasks = []
 
     def to_dict(self) -> Dict:
         return {
@@ -77,6 +80,7 @@ class ConversationState:
             "viin_linked_phone": self.viin_linked_phone,
             "viin_linked_user_id": self.viin_linked_user_id,
             "pending_briefing_tasks": self.pending_briefing_tasks,
+            "pending_managed_tasks": self.pending_managed_tasks,
         }
 
     @classmethod
@@ -86,6 +90,8 @@ class ConversationState:
             data["conversation_date"] = date.fromisoformat(data["conversation_date"])
         field_names = {f.name for f in fields(cls)}
         filtered = {k: v for k, v in data.items() if k in field_names}
+        if "pending_managed_tasks" not in filtered and filtered.get("pending_briefing_tasks"):
+            filtered["pending_managed_tasks"] = filtered.get("pending_briefing_tasks")
         return cls(**filtered)
 
 

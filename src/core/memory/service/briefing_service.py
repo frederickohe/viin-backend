@@ -93,10 +93,6 @@ class BriefingService:
         lines.append("")
         for i, task in enumerate(tasks, start=1):
             lines.append(f"{i}. {self._task_detail(task, now=now)}")
-        lines.append("")
-        lines.append(
-            'To remove an item, say "delete 1" or "remove 2" using the number from the list above.'
-        )
         return "\n".join(lines)
 
     def collect_tasks_due_on_day(
@@ -157,6 +153,108 @@ class BriefingService:
             is_overdue = due < now
             if not is_overdue and due > window_end:
                 continue
+            label = (r.title or r.body or "Reminder").strip()
+            tasks.append(
+                BriefingTask(
+                    title=label,
+                    source="reminder",
+                    due_at=due,
+                    list_name=None,
+                    is_overdue=is_overdue,
+                    has_urgent_keyword=bool(_URGENT_PATTERN.search(label)),
+                    sort_key=self._sort_key(
+                        is_overdue=is_overdue,
+                        has_urgent_keyword=bool(_URGENT_PATTERN.search(label)),
+                        due_at=due,
+                        created_at=r.created_at,
+                    ),
+                    entity_id=r.id,
+                )
+            )
+
+        open_items = (
+            self.db.query(MemoryListItem, MemoryList)
+            .join(MemoryList, MemoryList.id == MemoryListItem.list_id)
+            .filter(MemoryList.owner_user_id == owner_user_id)
+            .filter(MemoryList.deleted_at.is_(None))
+            .filter(MemoryListItem.deleted_at.is_(None))
+            .filter(MemoryListItem.completed_at.is_(None))
+            .order_by(MemoryListItem.created_at.asc())
+            .all()
+        )
+        for item, lst in open_items:
+            text = (item.text or "").strip()
+            if not text:
+                continue
+            tasks.append(
+                BriefingTask(
+                    title=text,
+                    source="todo",
+                    due_at=None,
+                    list_name=lst.name,
+                    is_overdue=False,
+                    has_urgent_keyword=bool(_URGENT_PATTERN.search(text)),
+                    sort_key=self._sort_key(
+                        is_overdue=False,
+                        has_urgent_keyword=bool(_URGENT_PATTERN.search(text)),
+                        due_at=None,
+                        created_at=item.created_at,
+                    ),
+                    entity_id=item.id,
+                    list_id=lst.id,
+                )
+            )
+
+        memory_items = (
+            self.db.query(MemoryItem)
+            .filter(MemoryItem.owner_user_id == owner_user_id)
+            .filter(MemoryItem.deleted_at.is_(None))
+            .filter(MemoryItem.item_type.in_(tuple(_BRIEFING_NOTE_TYPES)))
+            .order_by(MemoryItem.created_at.asc())
+            .all()
+        )
+        for mem in memory_items:
+            label = (mem.title or mem.text or "").strip()
+            if not label:
+                continue
+            if mem.title and mem.text and mem.text.strip() != label:
+                label = f"{mem.title.strip()}: {mem.text.strip()}"
+            tasks.append(
+                BriefingTask(
+                    title=label,
+                    source="note",
+                    due_at=None,
+                    list_name=None,
+                    is_overdue=False,
+                    has_urgent_keyword=bool(_URGENT_PATTERN.search(label)),
+                    sort_key=self._sort_key(
+                        is_overdue=False,
+                        has_urgent_keyword=bool(_URGENT_PATTERN.search(label)),
+                        due_at=None,
+                        created_at=mem.created_at,
+                    ),
+                    entity_id=mem.id,
+                )
+            )
+
+        tasks.sort(key=lambda t: t.sort_key)
+        return tasks
+
+    def collect_all_tasks(self, *, owner_user_id: str) -> List[BriefingTask]:
+        """All pending reminders, open to-dos, and saved notes (no time window)."""
+        now = _now()
+        tasks: List[BriefingTask] = []
+
+        reminders = (
+            self.db.query(Reminder)
+            .filter(Reminder.owner_user_id == owner_user_id)
+            .filter(Reminder.status.in_((ReminderStatus.SCHEDULED, ReminderStatus.SENT, ReminderStatus.FAILED)))
+            .order_by(Reminder.due_at.asc())
+            .all()
+        )
+        for r in reminders:
+            due = _ensure_aware(r.due_at)
+            is_overdue = due < now
             label = (r.title or r.body or "Reminder").strip()
             tasks.append(
                 BriefingTask(
@@ -317,72 +415,31 @@ class BriefingService:
             lines.append(f"{i}. {detail}")
 
         lines.append("")
-        lines.append(
-            "Most pressing item is listed first. To remove an item, say "
-            '"delete 1" or "remove 2" using the number from the list above.'
-        )
+        lines.append("Most pressing item is listed first. Ask me anytime for an updated briefing.")
         return "\n".join(lines)
 
     @staticmethod
-    def tasks_to_refs(tasks: List[BriefingTask]) -> List[dict]:
-        refs: List[dict] = []
-        for task in tasks:
-            ref = {
-                "source": task.source,
-                "entity_id": task.entity_id,
-                "title": task.title,
-            }
-            if task.list_id:
-                ref["list_id"] = task.list_id
-            refs.append(ref)
-        return refs
-
-    def delete_task_at_index(
-        self,
-        *,
-        owner_user_id: str,
-        task_refs: List[dict],
-        index: int,
-    ) -> str:
-        if not task_refs:
-            raise ValueError(
-                "No briefing list to work from. Ask for a daily, weekly, or monthly briefing first."
-            )
-        if index < 1 or index > len(task_refs):
-            raise ValueError(
-                f"Please choose a number between 1 and {len(task_refs)} from your last briefing."
-            )
-
-        ref = task_refs[index - 1]
-        title = (ref.get("title") or "that item").strip()
-        source = ref.get("source")
-        entity_id = ref.get("entity_id")
-
-        from core.memory.service.memory_service import MemoryService
-
-        memory = MemoryService(self.db)
-        if source == "reminder":
-            memory.cancel_reminder(owner_user_id=owner_user_id, reminder_id=entity_id)
-            return f"✅ Removed reminder: {title}"
-        if source == "todo":
-            list_id = ref.get("list_id")
-            if not list_id:
-                raise ValueError("Could not find that to-do item.")
-            memory.delete_list_item(
-                owner_user_id=owner_user_id,
-                list_id=list_id,
-                item_id=entity_id,
-            )
-            return f"✅ Removed from your task list: {title}"
-        if source == "note":
-            memory.delete_memory_item(owner_user_id=owner_user_id, item_id=entity_id)
-            return f"✅ Removed saved note: {title}"
-
-        raise ValueError("That item type cannot be removed from chat.")
+    def _attention_emoji(task: BriefingTask, *, now: datetime) -> str:
+        """Prefix emoji for tasks that need immediate attention."""
+        if task.is_overdue:
+            return "🚨 "
+        if task.due_at:
+            due = _ensure_aware(task.due_at)
+            due_day = due.replace(hour=0, minute=0, second=0, microsecond=0)
+            today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            delta_days = (due_day - today).days
+            if delta_days == 0:
+                return "⚠️ "
+            if delta_days == 1:
+                return "⚠️ "
+        if task.has_urgent_keyword:
+            return "⚠️ "
+        return ""
 
     @staticmethod
     def _task_detail(task: BriefingTask, *, now: datetime) -> str:
-        parts: List[str] = [task.title]
+        prefix = BriefingService._attention_emoji(task, now=now)
+        parts: List[str] = [f"{prefix}{task.title}".strip()]
 
         if task.source == "reminder" and task.due_at:
             due = _ensure_aware(task.due_at)

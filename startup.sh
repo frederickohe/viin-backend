@@ -136,6 +136,7 @@ python -m alembic upgrade head 2>&1 | grep -v "INFO" || true
 # Start the application with gunicorn
 echo "Starting Viin application..."
 exec gunicorn \
+	-c gunicorn.conf.py \
 	--bind 0.0.0.0:8000 \
 	--workers 4 \
 	--worker-class uvicorn.workers.UvicornWorker \

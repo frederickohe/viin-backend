@@ -1,5 +1,4 @@
 # core/nlu/service/intent_processor.py
-import asyncio
 import json
 import re
 from decimal import Decimal, InvalidOperation
@@ -197,8 +196,9 @@ class IntentProcessor:
         )
 
         try:
-            result = asyncio.run(
-                paystack_service.initialize_transaction(user_id=str(user_id), request=request)
+            result = paystack_service.initialize_transaction_sync(
+                user_id=str(user_id),
+                request=request,
             )
         except Exception as exc:
             logger.exception("Paystack initialize failed for user %s: %s", user_id, exc)
