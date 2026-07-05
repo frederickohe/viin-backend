@@ -16,7 +16,7 @@ class UserCreateRequest(BaseModel):
     gender: Optional[str] = None
     address: Optional[str] = None
     location: Optional[str] = None
-    ghana_card: str = Field(..., min_length=3)
+    ghana_card: Optional[str] = None
     
     # Membership Information
     company: Optional[str] = None
