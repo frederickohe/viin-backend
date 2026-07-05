@@ -200,6 +200,8 @@ async def _handle_text_message(
         elif not registered and not guest_ok:
             response_message = telegram_link_instruction_message()
         else:
+            if registered:
+                nlu_system.set_telegram_context_user(registered)
             response_message = nlu_system.process_message(nlu_user_id, text)
 
         logger.info("Generated Telegram response for %s", nlu_user_id)

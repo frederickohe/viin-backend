@@ -100,6 +100,19 @@ def telegram_chat_id_from_user_id(user_id: str) -> Optional[str]:
     return chat_id or None
 
 
+def _sync_telegram_link_state(
+    conversation_manager: Optional["ConversationManager"],
+    user_id: str,
+    user: User,
+) -> None:
+    if conversation_manager is None:
+        return
+    state = conversation_manager.get_conversation_state(user_id)
+    state.viin_linked_phone = user.phone
+    state.viin_linked_user_id = str(user.id)
+    conversation_manager._save_conversation_state(state)
+
+
 def find_user_by_telegram_chat_id(db: Session, chat_id: str) -> Optional[User]:
     if not chat_id:
         return None
@@ -164,12 +177,21 @@ def resolve_telegram_user(
 
     user = find_user_by_telegram_chat_id(db, chat_id)
     if user:
+        _sync_telegram_link_state(conversation_manager, user_id, user)
         return user
 
     linked_phone = None
+    linked_user_id = None
     if conversation_manager is not None:
         state = conversation_manager.get_conversation_state(user_id)
         linked_phone = getattr(state, "viin_linked_phone", None)
+        linked_user_id = getattr(state, "viin_linked_user_id", None)
+
+    if linked_user_id:
+        user = db.query(User).filter(User.id == linked_user_id).first()
+        if user:
+            _sync_telegram_link_state(conversation_manager, user_id, user)
+            return user
 
     phone_hint = (linked_phone or "").strip() or extract_phone_from_message(message_text or "")
     if not phone_hint:
@@ -190,10 +212,7 @@ def resolve_telegram_user(
         logger.exception("Failed to bind Telegram chat %s to user %s", chat_id, user.id)
         return None
     if conversation_manager is not None:
-        state = conversation_manager.get_conversation_state(user_id)
-        state.viin_linked_phone = user.phone
-        state.viin_linked_user_id = str(user.id)
-        conversation_manager._save_conversation_state(state)
+        _sync_telegram_link_state(conversation_manager, user_id, user)
     return user
 
 

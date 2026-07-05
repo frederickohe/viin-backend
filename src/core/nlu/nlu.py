@@ -53,6 +53,11 @@ class AutobusNLUSystem:
         self.intent_processor = IntentProcessor(db_session=db_session)
         self.date_selection_manager = DateSelectionManager()
         self.db_session = db_session
+        self._telegram_context_user: Optional[User] = None
+
+    def set_telegram_context_user(self, user: Optional[User]) -> None:
+        """Reuse the Telegram user resolved by the webhook layer for this request."""
+        self._telegram_context_user = user
 
     @staticmethod
     def _is_declining_more_help(text: str) -> bool:
@@ -501,9 +506,19 @@ class AutobusNLUSystem:
         return linked_phone, linked_user_id
 
     def _lookup_registered_user(self, user_id: str) -> Optional[User]:
+        if self._telegram_context_user and channel_type(user_id) == "telegram":
+            return self._telegram_context_user
+
         db = self.db_session or SessionLocal()
         should_close = self.db_session is None
         try:
+            if channel_type(user_id) == "telegram":
+                return resolve_telegram_user(
+                    db,
+                    user_id,
+                    None,
+                    conversation_manager=self.conversation_manager,
+                )
             linked_phone, linked_user_id = self._telegram_link_state(user_id)
             return find_registered_user(
                 db,
@@ -877,13 +892,14 @@ class AutobusNLUSystem:
                 }
 
             user = None
-            if channel_type(user_id) == "telegram":
-                linked_phone, linked_user_id = self._telegram_link_state(user_id)
-                user = find_registered_user(
+            if self._telegram_context_user and channel_type(user_id) == "telegram":
+                user = self._telegram_context_user
+            elif channel_type(user_id) == "telegram":
+                user = resolve_telegram_user(
                     db,
                     user_id,
-                    linked_phone=linked_phone,
-                    linked_user_id=linked_user_id,
+                    None,
+                    conversation_manager=self.conversation_manager,
                 )
             else:
                 user = user_service.find_user_by_phone(channel_user_id)
