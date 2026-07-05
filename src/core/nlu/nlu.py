@@ -25,6 +25,7 @@ from core.nlu.service.intent_handler_result import IntentHandlerResult
 from core.nlu.service.process_message_result import ProcessMessageResult
 from core.nlu.service.payment_command_parser import try_parse_payment_command
 from core.nlu.service.payment_confirmation import (
+    build_payment_confirmation_message,
     is_affirmative_response,
     is_declining_response,
     resolve_payment_slots,
@@ -153,6 +154,37 @@ class AutobusNLUSystem:
         state.collected_slots = {}
         self.conversation_manager._save_conversation_state(state)
 
+    def _prompt_payment_confirmation(
+        self,
+        user_id: str,
+        slots: Dict[str, Any],
+    ) -> ProcessMessageResult:
+        """Ask the user to confirm before creating a Paystack checkout link."""
+        state = self.conversation_manager.get_conversation_state(user_id)
+        clean_slots = {
+            k: str(v)
+            for k, v in (slots or {}).items()
+            if v is not None and str(v).strip() and k != "payment_method"
+        }
+        state.waiting_for_payment_confirmation = True
+        state.pending_payment_dto = {"slots": clean_slots, "intent": "make_payment"}
+        state.current_intent = "make_payment"
+        state.collected_slots = clean_slots
+        self.conversation_manager._save_conversation_state(state)
+
+        message = build_payment_confirmation_message(clean_slots)
+        response = self.response_formatter.format_response(
+            "make_payment",
+            "payment_confirmation",
+            message=message,
+        )
+        return self._as_result(response)
+
+    @staticmethod
+    def _is_paystack_checkout_message(message: str) -> bool:
+        text = (message or "").lower()
+        return "paystack" in text and ("http://" in text or "https://" in text)
+
     def _try_handle_payment_confirmation(
         self,
         user_id: str,
@@ -224,6 +256,13 @@ class AutobusNLUSystem:
 
     def _terminal_listener_apply(self, user_id: str, outcome: IntentHandlerResult) -> ProcessMessageResult:
         if outcome.http_status == 200:
+            msg = (outcome.message or "").strip()
+            if self._is_paystack_checkout_message(msg):
+                return ProcessMessageResult(
+                    text=msg,
+                    audio_bytes=outcome.audio_bytes,
+                    audio_mime_type=outcome.audio_mime_type,
+                )
             msg = self._conversation_completion_tool(user_id, outcome.message)
             return ProcessMessageResult(
                 text=msg,
@@ -388,9 +427,10 @@ class AutobusNLUSystem:
         if merchant_id:
             conversational_only = set(INTENT_CATEGORIES.get("conversational", []))
             task_management = set(INTENT_CATEGORIES.get("task_management", []))
+            payment_intents = set(INTENT_CATEGORIES.get("payment", []))
             allowed = conversational_only
             if self._is_merchant_owner_channel(user_data, channel_user_id):
-                allowed |= task_management
+                allowed |= task_management | payment_intents
             if intent not in allowed:
                 logger.info(
                     "Customer session %s: overriding admin intent '%s' with business_conversation",
@@ -454,18 +494,27 @@ class AutobusNLUSystem:
             )
 
         else:
-            # All slots collected, execute action directly
             slots_to_execute = state.collected_slots.copy()
-            handler_outcome = self._execute_action(
-                user_id, intent, slots_to_execute, user_message, state.conversation_history
-            )
-            result = self._terminal_listener_apply(user_id, handler_outcome)
+            if intent == "make_payment":
+                if not self._has_registered_account(user_id, user_data):
+                    result = self._as_result(
+                        self.response_formatter.format_response(
+                            "", "account_required", channel=channel_type(user_id)
+                        )
+                    )
+                else:
+                    result = self._prompt_payment_confirmation(user_id, slots_to_execute)
+            else:
+                handler_outcome = self._execute_action(
+                    user_id, intent, slots_to_execute, user_message, state.conversation_history
+                )
+                result = self._terminal_listener_apply(user_id, handler_outcome)
         
         # Add assistant response to history
         self.conversation_manager.update_conversation_history(user_id, "assistant", result.text)
 
-        # Clear collected slots if action was executed
-        if not current_missing:
+        # Clear collected slots if action was executed (not while awaiting payment confirm)
+        if not current_missing and intent != "make_payment":
             self.conversation_manager.clear_collected_slots(user_id)
             state = self.conversation_manager.get_conversation_state(user_id)
             state.current_intent = ""

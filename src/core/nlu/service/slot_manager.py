@@ -106,6 +106,9 @@ class SlotManager:
             elif freq in ("monthly", "month"):
                 validated_slots["repeat_frequency"] = "monthly"
 
+        if intent == "make_payment":
+            validated_slots.pop("payment_method", None)
+
         if intent == "update_task":
             body = (validated_slots.get("task_body") or "").strip()
             if body.lower().startswith("due "):

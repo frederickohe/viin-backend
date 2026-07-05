@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from core.nlu.service.payment_confirmation import (
+    build_payment_confirmation_message,
     conversation_mentions_payment_confirmation,
     is_affirmative_response,
     resolve_payment_slots,
@@ -43,9 +44,8 @@ def test_resolve_payment_slots_from_history():
 
 
 def test_should_handle_after_payment_prompt():
-    assert conversation_mentions_payment_confirmation(
-        "To complete the payment, reply yes to confirm."
-    )
+    prompt = build_payment_confirmation_message({"amount": "2", "recipient_name": "Anna"})
+    assert conversation_mentions_payment_confirmation(prompt)
     assert should_handle_payment_confirmation(
         user_message="yes",
         current_intent="normal_conversation",
@@ -54,9 +54,6 @@ def test_should_handle_after_payment_prompt():
         pending_payment_dto={},
         conversation_history=[
             {"role": "user", "content": "send 2 cedis to Anna 0207926310"},
-            {
-                "role": "assistant",
-                "content": "To complete the payment, reply yes to confirm.",
-            },
+            {"role": "assistant", "content": prompt},
         ],
     )

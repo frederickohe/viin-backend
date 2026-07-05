@@ -253,10 +253,8 @@ class IntentDetector:
           • recipient_name — who receives the payment (optional)
           • recipient_phone — recipient phone number (optional)
           • description — optional note about what the payment is for
-          • payment_method — how the user wants to pay: "momo" / "mobile money" or "bank" (optional)
         - Phrases like "send X cedi to [name] [phone]" are make_payment, NOT conversational chat.
-        - If the user mentions momo, mobile money, MTN, Vodafone, or AirtelTigo → payment_method: "momo"
-        - If the user mentions bank or bank transfer → payment_method: "bank"
+        - Do NOT ask the user to choose momo or bank in chat — they choose on the Paystack checkout page after confirming.
 
         REMINDER SHORTCUTS:
         - "remind me to [task] in X minutes/hours" → add_task with schedule_type=deadline and due_at="in X minutes"
@@ -334,12 +332,12 @@ class IntentDetector:
         Examples:
         User starts make_payment: "Pay 50 cedis via momo"
         INTENT: make_payment
-        SLOTS: {{"amount": "50", "payment_method": "momo"}}
+        SLOTS: {{"amount": "50"}}
         MISSING:
 
         User starts make_payment: "Send 100 cedis by bank transfer"
         INTENT: make_payment
-        SLOTS: {{"amount": "100", "payment_method": "bank"}}
+        SLOTS: {{"amount": "100"}}
         MISSING:
 
         User starts make_payment: "Send 1 cedi to Anna 0207926310"

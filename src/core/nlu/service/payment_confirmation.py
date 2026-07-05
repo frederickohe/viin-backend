@@ -16,7 +16,7 @@ _DECLINE_RE = re.compile(
     re.IGNORECASE,
 )
 _PAYMENT_CONFIRMATION_HINT_RE = re.compile(
-    r"\b(?:complete the payment|confirm(?:\s+this)?(?:\s+payment)?|pay\s+ghs|paystack|checkout|reply\s+['\"]yes['\"])\b",
+    r"\b(?:please confirm this payment|reply\s+yes|paystack payment link|choose mobile money or bank)\b",
     re.IGNORECASE,
 )
 
@@ -27,6 +27,32 @@ def is_affirmative_response(text: str) -> bool:
 
 def is_declining_response(text: str) -> bool:
     return bool(_DECLINE_RE.match((text or "").strip()))
+
+
+def build_payment_confirmation_message(slots: Dict[str, str]) -> str:
+    """Summarize a pending payment and ask the user to confirm."""
+    raw_amount = (slots.get("amount") or "").strip()
+    try:
+        amount_display = f"{float(raw_amount):.2f}"
+    except (TypeError, ValueError):
+        amount_display = raw_amount or "?"
+
+    recipient_name = (slots.get("recipient_name") or slots.get("recipient") or "").strip()
+    recipient_phone = (slots.get("recipient_phone") or slots.get("phone_number") or "").strip()
+    description = (slots.get("description") or "").strip()
+
+    lines = ["💳 Please confirm this payment:", "", f"Amount: GHS {amount_display}"]
+    if recipient_name or recipient_phone:
+        parts = [p for p in (recipient_name, recipient_phone) if p]
+        lines.append(f"Recipient: {' '.join(parts)}")
+    if description:
+        lines.append(f"Note: {description}")
+    lines.append("")
+    lines.append(
+        "Reply yes to get your Paystack payment link — you'll choose Mobile Money or Bank there."
+    )
+    lines.append("Reply no to cancel.")
+    return "\n".join(lines)
 
 
 def conversation_mentions_payment_confirmation(text: str) -> bool:

@@ -171,7 +171,6 @@ class IntentProcessor:
         recipient_name = (slots.get("recipient_name") or slots.get("recipient") or "").strip()
         recipient_phone = (slots.get("recipient_phone") or slots.get("phone_number") or "").strip()
         description = (slots.get("description") or "").strip()
-        payment_method = (slots.get("payment_method") or "").strip().lower() or None
         payer_name = (user_data or {}).get("fullname", "").strip()
         payer_phone = (user_data or {}).get("customer_phone") or (user_data or {}).get("user_id") or ""
         payer_phone = str(payer_phone).strip()
@@ -195,10 +194,7 @@ class IntentProcessor:
             metadata["payer_name"] = payer_name
         if payer_phone:
             metadata["payer_phone"] = payer_phone
-        if payment_method:
-            metadata["payment_method"] = payment_method
         callback_url = (settings.PAYSTACK_BILLING_CALLBACK_URL or "").strip() or None
-        channels = _resolve_paystack_channels(payment_method)
 
         paystack_service = PaystackService(db)
         request = PaystackInitializeRequest(
@@ -206,7 +202,7 @@ class IntentProcessor:
             amount=amount_pesewas,
             metadata=metadata,
             callback_url=callback_url,
-            channels=channels,
+            channels=None,
         )
 
         try:
@@ -232,7 +228,6 @@ class IntentProcessor:
         return template.format(
             amount=f"{amount_ghs:.2f}",
             recipient_label=recipient_label,
-            method_label=_payment_method_label(payment_method),
             payment_url=result.authorization_url,
             reference=result.reference or "",
         )

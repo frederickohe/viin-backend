@@ -89,7 +89,7 @@ INTENTS = {
     # ===== PAYSTACK PAYMENT INTENTS =====
     "make_payment": {
         "description": "Send money or pay someone via secure Paystack checkout",
-        "slots": ["amount", "recipient_name", "recipient_phone", "description", "payment_method"],
+        "slots": ["amount", "recipient_name", "recipient_phone", "description"],
         "required_slots": ["amount"],
         "category": "payment"
     },
@@ -312,7 +312,7 @@ RESPONSE_TEMPLATES = {
     },
     
     "payment": {
-        "make_payment": "💳 Pay GHS {amount}{recipient_label} via Paystack{method_label}: {payment_url}\nReference: {reference}",
+        "make_payment": "💳 Pay GHS {amount}{recipient_label} via Paystack:\n{payment_url}\nReference: {reference}\n\nOpen the link and choose Mobile Money or Bank to complete payment.",
         "missing_slots_make_payment": "I can set up a Paystack payment for you. Please provide: {missing_slots}",
         "error": "I couldn't start the Paystack checkout right now. Please try again in a moment."
     },

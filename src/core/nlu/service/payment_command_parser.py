@@ -21,7 +21,6 @@ _MAKE_PAYMENT_AMOUNT_RE = re.compile(
 )
 _RECIPIENT_TAIL_RE = re.compile(r"\b(?:to|for)\s+(.+)$", re.IGNORECASE)
 _RECIPIENT_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z'\- ]{0,48}[A-Za-z]$|^[A-Za-z]$")
-_MOMO_HINTS = ("momo", "mobile money", "mtn", "vodafone", "airteltigo", "airtel", "tigo", "telecel")
 
 
 def try_parse_payment_command(user_message: str) -> Optional[Dict[str, str]]:
@@ -48,11 +47,6 @@ def try_parse_payment_command(user_message: str) -> Optional[Dict[str, str]]:
 
     slots: Dict[str, str] = {"amount": amount_match.group(1)}
     lower = text.lower()
-
-    if any(hint in lower for hint in _MOMO_HINTS):
-        slots["payment_method"] = "momo"
-    elif "bank" in lower:
-        slots["payment_method"] = "bank"
 
     phones = extract_ghana_phone_numbers_from_text(text)
     if phones:
