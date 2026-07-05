@@ -1,15 +1,15 @@
 import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import Dict, Any
 import logging
-from core.auth.service.authservice import AuthService
+from another_fastapi_jwt_auth import AuthJWT
+from core.auth.controller.authcontroller import validate_token
 from core.nlu.dto.reponse.nluresponse import NLUResponse
 from core.nlu.nlu import AutobusNLUSystem
 from core.nlu.dto.request.nlurequest import NLURequest
-from core.subscription.service.subscription_service import SubscriptionService
 from core.user.service.user_service import UserService
 from utilities.dbconfig import SessionLocal
+from utilities.phone_utils import normalize_ghana_phone_number
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -21,60 +21,69 @@ def get_db():
     finally:
         db.close()
 
-# Initialize NLU system
-nlu_system = AutobusNLUSystem()
-
 nlu_routes = APIRouter()
 
 @nlu_routes.post("/process", response_model=NLUResponse)
 async def process_message(
     request: NLURequest,
-    db: Session = Depends(get_db)
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
 ):
     """
-    Process natural language messages through the NLU system
+    Process natural language messages through the NLU system.
+    Requires a signed-in Viin account.
     """
     try:
-        # Get current user from request
-        db = SessionLocal()
         user_service = UserService(db)
+        current_user = user_service.get_current_user(authjwt.get_jwt_subject())
 
-        current_user = user_service.get_user_by_phone(request.phone)
+        if not current_user.enabled:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your account is not verified yet. Please complete signup and OTP verification.",
+            )
 
-        # Get user subscription status from database
-        subscription_service = SubscriptionService(db)
+        account_phone = (current_user.phone or "").strip()
+        if not account_phone:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Your account needs a phone number before you can use the assistant.",
+            )
 
-        result = subscription_service.get_user_subscription_status_by_phone(request.phone)
+        if request.phone:
+            requested = normalize_ghana_phone_number(request.phone)
+            actual = normalize_ghana_phone_number(account_phone)
+            if requested and actual and requested != actual:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Phone number does not match your signed-in account.",
+                )
 
-        logger.info(f"Processing message for user {current_user.username}: {request.message}")
-        
-        # Process message through NLU system
-        #nlu_system.initialize_user(current_user.phone, current_user.hashed_pin)
+        nlu_system = AutobusNLUSystem(db_session=db)
+        logger.info("Processing message for user %s", account_phone[:32])
 
-        response = nlu_system.process_message(
-            current_user.phone,
-            request.message,
-            result["has_active_subscription"]
-        )
+        response = nlu_system.process_message(account_phone, request.message)
 
         return NLUResponse(
-            user_id=current_user.phone,
+            user_id=account_phone,
             message=request.message,
             response=response,
-            success=True
+            success=True,
         )
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error processing NLU message: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing message: {str(e)}"
+            detail=f"Error processing message: {str(e)}",
         )
 
 @nlu_routes.get("/chat-updates")
 async def get_chat_updates(
-    phone: str,
     since: str | None = None,
+    authjwt: AuthJWT = Depends(validate_token),
     db: Session = Depends(get_db),
 ):
     """
@@ -83,10 +92,14 @@ async def get_chat_updates(
     """
     try:
         user_service = UserService(db)
-        current_user = user_service.get_user_by_phone(phone)
-        if not current_user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        current_user = user_service.get_current_user(authjwt.get_jwt_subject())
+        if not current_user.phone:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Your account needs a phone number to use chat reminders.",
+            )
 
+        nlu_system = AutobusNLUSystem(db_session=db)
         state = nlu_system.conversation_manager.get_conversation_state(current_user.phone)
         history = state.conversation_history or []
         assistant_messages = [
@@ -117,62 +130,69 @@ async def get_chat_updates(
 @nlu_routes.get("/conversation-history")
 async def get_conversation_history(
     user_id: str,
-    db: Session = Depends(get_db)
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
 ):
     """
     Get user's conversation history
     """
     try:
-
-        # Get current user from request
-        db = SessionLocal()
         user_service = UserService(db)
+        current_user = user_service.get_current_user(authjwt.get_jwt_subject())
 
-        current_user = user_service.get_user_by_phone(user_id)
+        if normalize_ghana_phone_number(user_id) != normalize_ghana_phone_number(current_user.phone or ""):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
+        nlu_system = AutobusNLUSystem(db_session=db)
         conversation_state = nlu_system.conversation_manager.get_conversation_state(current_user.phone)
-        
+
         return {
             "user_id": current_user.phone,
             "conversation_history": conversation_state.conversation_history,
             "current_intent": conversation_state.current_intent,
-            "collected_slots": conversation_state.collected_slots
+            "collected_slots": conversation_state.collected_slots,
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching conversation history: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching conversation history: {str(e)}"
+            detail=f"Error fetching conversation history: {str(e)}",
         )
 
 @nlu_routes.delete("/conversation-history")
 async def clear_conversation_history(
     user_id: str,
-    db: Session = Depends(get_db)
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
 ):
     """
     Clear user's conversation history
     """
     try:
-        # Get current user from request
-        db = SessionLocal()
         user_service = UserService(db)
+        current_user = user_service.get_current_user(authjwt.get_jwt_subject())
 
-        current_user = user_service.get_user_by_phone(user_id)
-        
+        if normalize_ghana_phone_number(user_id) != normalize_ghana_phone_number(current_user.phone or ""):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+        nlu_system = AutobusNLUSystem(db_session=db)
         nlu_system.conversation_manager.reset_conversation_state(current_user.phone)
-        
+
         return {
             "success": True,
-            "message": "Conversation history cleared successfully"
+            "message": "Conversation history cleared successfully",
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error clearing conversation history: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error clearing conversation history: {str(e)}"
+            detail=f"Error clearing conversation history: {str(e)}",
         )
 
 @nlu_routes.get("/health")
@@ -183,5 +203,5 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "Autobus NLU System",
-        "timestamp": f"{datetime.datetime.utcnow().isoformat()}Z"
+        "timestamp": f"{datetime.datetime.utcnow().isoformat()}Z",
     }

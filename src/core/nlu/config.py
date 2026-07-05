@@ -88,8 +88,8 @@ INTENTS = {
     },
     # ===== PAYSTACK PAYMENT INTENTS =====
     "make_payment": {
-        "description": "Initiate a secure Paystack payment checkout",
-        "slots": ["amount", "description"],
+        "description": "Send money or pay someone via secure Paystack checkout",
+        "slots": ["amount", "recipient_name", "recipient_phone", "description"],
         "required_slots": ["amount"],
         "category": "payment"
     },
@@ -231,9 +231,8 @@ SYSTEM_PROMPTS = {
 
     "payment": """
     You are a payment assistant for the customer's organization in Ghana.
-    Payments are processed securely through Paystack (card, bank transfer, and mobile money via Paystack checkout).
-    Help users initiate payments by collecting the amount and an optional description.
-    Do not promise to send money directly to phone numbers or buy airtime outside Paystack.
+    All money transfers and payments go through secure Paystack checkout — never promise direct mobile-money sends.
+    When users say "send X cedi to [name/phone]", route them through Paystack payment, not open-ended chat confirmation.
 
     Current User Context: {context}
     Missing slots: {missing_slots}
@@ -288,7 +287,7 @@ RESPONSE_TEMPLATES = {
     },
     
     "payment": {
-        "make_payment": "💳 Pay GHS {amount} securely via Paystack: {payment_url}\nReference: {reference}",
+        "make_payment": "💳 Pay GHS {amount}{recipient_label} via Paystack: {payment_url}\nReference: {reference}",
         "missing_slots_make_payment": "I can set up a Paystack payment for you. Please provide: {missing_slots}",
         "error": "I couldn't start the Paystack checkout right now. Please try again in a moment."
     },

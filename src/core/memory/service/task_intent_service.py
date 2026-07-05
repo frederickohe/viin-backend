@@ -38,6 +38,10 @@ _TIME_RE = re.compile(
 _ISO_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?",
 )
+_RELATIVE_RE = re.compile(
+    r"\bin\s+(\d+)\s*(minute|minutes|min|mins|hour|hours|hr|hrs|day|days)\b",
+    re.IGNORECASE,
+)
 
 
 def normalize_schedule_type(raw: Optional[str]) -> Optional[str]:
@@ -109,6 +113,17 @@ def parse_due_at(value: str, *, now: Optional[datetime] = None) -> datetime:
         raise ValueError("Due date/time is required.")
 
     lowered = text.lower()
+
+    relative_match = _RELATIVE_RE.search(lowered)
+    if relative_match:
+        qty = int(relative_match.group(1))
+        unit = relative_match.group(2).lower()
+        if unit.startswith("min"):
+            return now + timedelta(minutes=qty)
+        if unit.startswith("hour") or unit.startswith("hr"):
+            return now + timedelta(hours=qty)
+        if unit.startswith("day"):
+            return now + timedelta(days=qty)
 
     if _ISO_RE.match(text):
         normalized = text.replace(" ", "T")
@@ -188,6 +203,8 @@ class TaskIntentService:
             raise HTTPException(status_code=400, detail="Task description is required.")
 
         schedule = normalize_schedule_type(slots.get("schedule_type"))
+        if not schedule and (slots.get("due_at") or "").strip():
+            schedule = "deadline"
         reminder_delivery = delivery or ReminderDeliveryService.default_delivery_for_owner(owner_user_id)
         if schedule == "open":
             return self._create_open_task(owner_user_id=owner_user_id, body=body)

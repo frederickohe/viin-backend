@@ -126,8 +126,25 @@ class IntentProcessor:
             return "Please provide a payment amount greater than zero."
 
         amount_pesewas = int(round(amount_ghs * 100))
+        recipient_name = (slots.get("recipient_name") or slots.get("recipient") or "").strip()
+        recipient_phone = (slots.get("recipient_phone") or slots.get("phone_number") or "").strip()
         description = (slots.get("description") or "").strip()
-        metadata = {"description": description} if description else None
+
+        if not description and (recipient_name or recipient_phone):
+            parts = []
+            if recipient_name:
+                parts.append(recipient_name)
+            if recipient_phone:
+                parts.append(recipient_phone)
+            description = f"Payment to {' '.join(parts)}"
+
+        metadata = {"intent": "make_payment"}
+        if description:
+            metadata["description"] = description
+        if recipient_name:
+            metadata["recipient_name"] = recipient_name
+        if recipient_phone:
+            metadata["recipient_phone"] = recipient_phone
         callback_url = (settings.PAYSTACK_BILLING_CALLBACK_URL or "").strip() or None
 
         db = self.db_session
@@ -160,8 +177,13 @@ class IntentProcessor:
             return RESPONSE_TEMPLATES["payment"]["error"]
 
         template = RESPONSE_TEMPLATES["payment"]["make_payment"]
+        recipient_label = ""
+        if recipient_name or recipient_phone:
+            label_parts = [p for p in (recipient_name, recipient_phone) if p]
+            recipient_label = f" to {' '.join(label_parts)}"
         return template.format(
             amount=f"{amount_ghs:.2f}",
+            recipient_label=recipient_label,
             payment_url=result.authorization_url,
             reference=result.reference or "",
         )

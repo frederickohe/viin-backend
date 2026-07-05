@@ -9,6 +9,7 @@ from sqlalchemy import func, or_
 import logging
 import os
 from core.user.model.User import User
+from core.user.service.user_service import UserService
 from core.nlu.nlu import AutobusNLUSystem
 from core.subscription.service.subscription_service import SubscriptionService
 from core.webhooks.service.whatsapp_service import WhatsAppService
@@ -343,6 +344,15 @@ async def handle_simple_chat(
         else:
             nlu_user_id = normalize_ghana_phone_number(cust)
             logger.info("Processing simple chat (legacy key) customer=%s", cust[:32])
+
+        user = UserService(db).find_user_by_phone(nlu_user_id)
+        if not user:
+            return SimpleChatResponse(
+                message=(
+                    "Please create a Viin account and sign in before using the assistant. "
+                    "Visit the Viin website to sign up."
+                )
+            )
 
         nlu_system = AutobusNLUSystem(db_session=db)
         response_message = nlu_system.process_message(nlu_user_id, msg)

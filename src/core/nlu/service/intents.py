@@ -243,12 +243,18 @@ class IntentDetector:
         - schedule_type values: use "open" for no date, "deadline" for one-time due date, "recurring" for repeating tasks.
 
         PAYSTACK PAYMENTS:
-        - User wants to pay, make a payment, checkout, or subscribe via Paystack → make_payment
-        - Examples: "pay 50 cedis", "I want to make a payment of 100", "start a Paystack checkout for 25 GHS"
+        - User wants to send money, pay someone, transfer cedis, checkout, or subscribe → make_payment
+        - Examples: "send 1 cedi to Anna 0207926310", "pay 50 cedis to John", "make a payment of 25 GHS"
         - Slots:
           • amount — payment amount in GHS (required)
+          • recipient_name — who receives the payment (optional)
+          • recipient_phone — recipient phone number (optional)
           • description — optional note about what the payment is for
-        - Do NOT use make_payment for direct mobile-money transfers, airtime top-ups, or bill payments to phone numbers.
+        - Phrases like "send X cedi to [name] [phone]" are make_payment, NOT conversational chat.
+
+        REMINDER SHORTCUTS:
+        - "remind me to [task] in X minutes/hours" → add_task with schedule_type=deadline and due_at="in X minutes"
+        - Example: "remind me to text Anna in 2 minutes" → task_body="text Anna", schedule_type="deadline", due_at="in 2 minutes"
         """
         
         current_intent_context = f"CURRENT_INTENT: {current_intent if current_intent else 'Intent Extraction'}"
@@ -296,6 +302,11 @@ class IntentDetector:
         MISSING: [comma_separated_missing_slots]
         
         Examples:
+        User starts make_payment: "Send 1 cedi to Anna 0207926310"
+        INTENT: make_payment
+        SLOTS: {{"amount": "1", "recipient_name": "Anna", "recipient_phone": "0207926310"}}
+        MISSING:
+
         User starts make_payment: "Pay 50 cedis"
         INTENT: make_payment
         SLOTS: {{"amount": "50"}}
@@ -309,6 +320,11 @@ class IntentDetector:
         User continues make_payment: "Actually, make it 75 cedis"
         INTENT: make_payment
         SLOTS: {{"amount": "75"}}
+        MISSING:
+
+        User starts add_task reminder: "Remind me to text Anna in 2 minutes"
+        INTENT: add_task
+        SLOTS: {{"task_body": "text Anna", "schedule_type": "deadline", "due_at": "in 2 minutes"}}
         MISSING:
 
         User starts add_task: "Add a task to buy groceries"

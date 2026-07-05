@@ -23,6 +23,12 @@ class ResponseFormatter:
         elif message_type == "intent_not_clear":
             return "I'm not quite sure what you're asking. Could you please rephrase or provide more details? I can help you with: todos and reminders, email, media generation, Paystack payments, daily or weekly briefings, and profile updates."
         
+        elif message_type == "account_required":
+            return (
+                "You need a Viin account before I can do that. "
+                "Please sign up and verify your account, then sign in and try again."
+            )
+
         elif message_type == "error":
             return kwargs.get("message") or "Something went wrong. Please try again."
 

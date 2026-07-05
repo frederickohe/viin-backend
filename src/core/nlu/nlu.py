@@ -174,6 +174,11 @@ class AutobusNLUSystem:
         logger.info("Detected intent=%s missing=%s", intent, missing_slots)
 
         user_data = self._get_user_data(user_id)
+        if self._requires_registered_account(intent) and not self._has_registered_account(user_data):
+            response = self.response_formatter.format_response("", "account_required")
+            self.conversation_manager.update_conversation_history(user_id, "assistant", response)
+            return response
+
         merchant_id, channel_user_id = self._parse_merchant_scoped_user_id(user_id)
         if merchant_id:
             conversational_only = set(INTENT_CATEGORIES.get("conversational", []))
@@ -348,6 +353,11 @@ class AutobusNLUSystem:
             )
             return IntentHandlerResult(msg, None)
         elif intent in payment_intents:
+            if not self._has_registered_account(user_data):
+                return IntentHandlerResult(
+                    self.response_formatter.format_response("", "account_required"),
+                    None,
+                )
             msg = self.intent_processor.process_payment_intent(
                 intent,
                 slots,
@@ -433,6 +443,17 @@ class AutobusNLUSystem:
                 None,
             )
 
+    @staticmethod
+    def _requires_registered_account(intent: str) -> bool:
+        protected = set()
+        for key in ("payment", "task_management", "email", "user_management", "image_generation", "video_generation"):
+            protected.update(INTENT_CATEGORIES.get(key, []))
+        return intent in protected
+
+    @staticmethod
+    def _has_registered_account(user_data: Optional[Dict[str, Any]]) -> bool:
+        return bool((user_data or {}).get("db_user_id"))
+
     def _resolve_internal_user_id(
         self, user_id: str, user_data: Optional[Dict[str, Any]]
     ) -> str:
@@ -443,14 +464,23 @@ class AutobusNLUSystem:
         db = self.db_session or SessionLocal()
         should_close = self.db_session is None
         try:
-            user = UserService(db).find_user_by_phone(user_id)
+            merchant_id, channel_user_id = self._parse_merchant_scoped_user_id(user_id)
+            lookup_id = channel_user_id if merchant_id else user_id
+            user = UserService(db).find_user_by_phone(lookup_id)
             if user:
                 return str(user.id)
-            logger.warning("Could not resolve internal user ID for %s", user_id)
-            return user_id
+            raise HTTPException(
+                status_code=403,
+                detail="Please create a Viin account and sign in before using this feature.",
+            )
+        except HTTPException:
+            raise
         except Exception as e:
             logger.warning("Could not fetch internal user ID for %s: %s", user_id, e)
-            return user_id
+            raise HTTPException(
+                status_code=403,
+                detail="Please create a Viin account and sign in before using this feature.",
+            ) from e
         finally:
             if should_close:
                 db.close()

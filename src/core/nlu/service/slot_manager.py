@@ -143,6 +143,8 @@ class SlotManager:
 
         slot_descriptions = {
             "amount": "How much would you like to pay (in GHS)?",
+            "recipient_name": "Who should receive this payment?",
+            "recipient_phone": "What is the recipient's phone number?",
             "category": "Which category?",
             "period": "For what period?",
             "time_period": "For what time period?",
@@ -169,7 +171,7 @@ class SlotManager:
                 "• deadline — due once at a specific date/time\n"
                 "• recurring — repeats daily, weekly, or monthly at a set time"
             ),
-            "due_at": "When is it due? Give a date and time (e.g. tomorrow at 3pm, or 2026-07-10 14:00).",
+            "due_at": "When is it due? Give a date and time (e.g. in 5 minutes, tomorrow at 3pm, or 2026-07-10 14:00).",
             "repeat_frequency": "How often should it repeat? (daily, weekly, or monthly)",
             "repeat_time": "What time should it repeat each cycle? (e.g. 8am, 5:30pm)",
         }
