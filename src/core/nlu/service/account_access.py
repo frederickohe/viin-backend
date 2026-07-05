@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Optional, Tuple, TYPE_CHECKING
 
@@ -9,7 +10,6 @@ from core.user.model.User import User
 from core.user.service.user_service import UserService
 from utilities.phone_utils import (
     convert_to_local_ghana_format,
-    extract_ghana_phone_numbers_from_text,
     normalize_ghana_phone_number,
 )
 
@@ -23,6 +23,8 @@ _LINK_PHONE_RE = re.compile(
 
 _TELEGRAM_AGENT = "telegram"
 
+logger = logging.getLogger(__name__)
+
 
 def channel_type(user_id: str) -> str:
     uid = (user_id or "").strip()
@@ -31,6 +33,17 @@ def channel_type(user_id: str) -> str:
     if ":" in uid:
         return "merchant_scoped"
     return "phone"
+
+
+def telegram_link_instruction_message() -> str:
+    return (
+        "This Telegram chat isn't connected to your Viin account yet.\n\n"
+        "To connect, send your Viin phone number exactly like this:\n"
+        "link 0247291736\n\n"
+        "(Replace with the phone number on your account.)\n\n"
+        "New here? Sign up on the Viin website, verify your phone via OTP, "
+        "then send the link command above."
+    )
 
 
 def friendly_account_required_message(
@@ -48,13 +61,13 @@ def friendly_account_required_message(
         if phone:
             display = convert_to_local_ghana_format(phone) or phone
             return (
-                f"I couldn't find a Viin account for {display}. "
-                "Sign up on the Viin website with this number, verify it, then message me again."
+                f"I couldn't find a Viin account for {display}.\n\n"
+                "Please check the number matches your Viin account exactly, "
+                "including the leading 0 (e.g. link 0247291736).\n\n"
+                "If you haven't signed up yet, create your account on the Viin website "
+                "and verify your phone via OTP first."
             )
-        return (
-            "Hi! I don't have a Viin account for this chat yet. "
-            "Sign up on the Viin website with your phone number, verify it, then message me here."
-        )
+        return telegram_link_instruction_message()
     return (
         "Hi! You'll need a Viin account for that. "
         "Sign up on the Viin website, verify your phone, sign in, and try again."
@@ -68,22 +81,13 @@ def parse_link_phone_command(text: str) -> Optional[str]:
     return normalize_ghana_phone_number(match.group(1))
 
 
+def is_telegram_link_attempt(text: str) -> bool:
+    return parse_link_phone_command(text) is not None
+
+
 def extract_phone_from_message(text: str) -> Optional[str]:
-    """Return a normalized phone when the user shares one (with or without a link command)."""
-    linked = parse_link_phone_command(text)
-    if linked:
-        return linked
-
-    stripped = (text or "").strip()
-    if stripped and re.fullmatch(r"[\d\s+\-()]+", stripped):
-        digits = re.sub(r"\D", "", stripped)
-        if 9 <= len(digits) <= 13:
-            return normalize_ghana_phone_number(stripped)
-
-    phones = extract_ghana_phone_numbers_from_text(text or "")
-    if len(phones) == 1:
-        return normalize_ghana_phone_number(phones[0])
-    return None
+    """Return a normalized phone from an explicit link command."""
+    return parse_link_phone_command(text)
 
 
 def telegram_chat_id_from_user_id(user_id: str) -> Optional[str]:
@@ -155,9 +159,18 @@ def resolve_telegram_user(
 
     user = UserService(db).find_user_by_phone(phone_hint)
     if not user:
+        logger.info(
+            "Telegram link failed for chat %s: no Viin user for phone hint %s",
+            chat_id,
+            phone_hint,
+        )
         return None
 
-    bind_telegram_chat(db, user, chat_id)
+    try:
+        bind_telegram_chat(db, user, chat_id)
+    except Exception:
+        logger.exception("Failed to bind Telegram chat %s to user %s", chat_id, user.id)
+        return None
     if conversation_manager is not None:
         state = conversation_manager.get_conversation_state(user_id)
         state.viin_linked_phone = user.phone

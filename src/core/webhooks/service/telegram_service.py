@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 VIIN_BOT_COMMANDS: list[dict[str, str]] = [
     {"command": "start", "description": "Start chatting with Viin"},
     {"command": "help", "description": "See what Viin can do"},
+    {"command": "link", "description": "Connect your Viin phone number"},
     {"command": "briefing", "description": "Today's tasks and overdue items"},
     {"command": "yesterday", "description": "What was due yesterday"},
     {"command": "addtask", "description": "Add a new task or reminder"},

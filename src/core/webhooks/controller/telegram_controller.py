@@ -10,7 +10,9 @@ from core.nlu.nlu import AutobusNLUSystem
 from core.nlu.service.account_access import (
     extract_phone_from_message,
     friendly_account_required_message,
+    is_telegram_link_attempt,
     resolve_telegram_user,
+    telegram_link_instruction_message,
     telegram_link_success_message,
 )
 from core.webhooks.service.telegram_service import TelegramService
@@ -29,8 +31,12 @@ def _telegram_user_id(chat_id: int | str) -> str:
 _TELEGRAM_COMMAND_MESSAGES = {
     "/start": (
         "Hi! I'm Viin — your personal task assistant.\n\n"
-        "Create your free account on the Viin website with your phone number, verify it, "
-        "then send your number here (for example: 02472091736) and I'll connect this chat automatically.\n\n"
+        "First time here?\n"
+        "1. Create your free account on the Viin website\n"
+        "2. Verify your phone via OTP\n"
+        "3. Connect this chat by sending:\n"
+        "link 0247291736\n"
+        "(use your actual Viin phone number)\n\n"
         "Tap the menu button (☰) to see commands, or try:\n"
         "• /briefing — today's tasks\n"
         "• /addtask — add a task\n"
@@ -42,12 +48,16 @@ _TELEGRAM_COMMAND_MESSAGES = {
         "• Add tasks with or without a due date\n"
         "• Daily or weekly briefings\n"
         "• Check what was due yesterday\n\n"
-        "🔐 Connect your account\n"
-        "• Send the phone number on your Viin account (e.g. 02472091736)\n"
-        "• Or share your contact using the attachment button\n\n"
+        "🔗 Connect your account\n"
+        "• Send: link 0247291736 (use the phone on your Viin account)\n\n"
         "💬 General help\n"
         "• Answer questions about your pending to-dos\n\n"
         "Try: \"remind me to call John tomorrow at 3pm\" or \"what do I need to do today?\""
+    ),
+    "/link": (
+        "To connect this Telegram chat to your Viin account, send:\n"
+        "link 0247291736\n\n"
+        "Replace 0247291736 with the phone number on your Viin account."
     ),
     "/briefing": "What do I need to do today? Give me my daily briefing.",
     "/tasks": "What do I need to do today? Give me my daily briefing.",
@@ -127,7 +137,7 @@ async def telegram_webhook(
         text=text,
         telegram_service=telegram_service,
         db=db,
-        guest_ok=command_key in ("/start", "/help"),
+        guest_ok=command_key in ("/start", "/help", "/link"),
     )
 
 
@@ -143,7 +153,7 @@ async def _handle_phone_link(
     registered = resolve_telegram_user(
         db,
         nlu_user_id,
-        phone,
+        f"link {phone}",
         conversation_manager=nlu_system.conversation_manager,
     )
     if not registered:
@@ -172,7 +182,8 @@ async def _handle_text_message(
     try:
         nlu_user_id = _telegram_user_id(chat_id)
         nlu_system = AutobusNLUSystem(db_session=db)
-        phone_attempt = extract_phone_from_message(text)
+        link_attempt = is_telegram_link_attempt(text)
+        link_phone = extract_phone_from_message(text)
         registered = resolve_telegram_user(
             db,
             nlu_user_id,
@@ -180,14 +191,14 @@ async def _handle_text_message(
             conversation_manager=nlu_system.conversation_manager,
         )
 
-        if phone_attempt and registered:
+        if link_attempt and registered:
             response_message = telegram_link_success_message(registered)
-        elif phone_attempt and not registered:
+        elif link_attempt and not registered:
             response_message = friendly_account_required_message(
-                "telegram", phone=phone_attempt
+                "telegram", phone=link_phone
             )
         elif not registered and not guest_ok:
-            response_message = friendly_account_required_message("telegram")
+            response_message = telegram_link_instruction_message()
         else:
             response_message = nlu_system.process_message(nlu_user_id, text)
 

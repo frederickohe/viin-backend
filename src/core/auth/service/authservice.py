@@ -16,6 +16,8 @@ from core.notification.model.Notification import (
     NotificationType,
 )
 from core.otp.service.otpservice import OTPService
+from core.user.service.user_service import UserService
+from utilities.phone_utils import convert_to_local_ghana_format
 import secrets
 import string
 import logging
@@ -76,11 +78,16 @@ class AuthService:
                 raise UserAlreadyExistsError(field="fullname")
             
         user_id = self.generate_user_id()
+        stored_phone = (
+            convert_to_local_ghana_format(request.phone)
+            if getattr(request, "phone", None)
+            else None
+        )
 
         db_user = User(
             id=user_id,
             fullname=request.fullname,
-            phone=request.phone,
+            phone=stored_phone,
             email=request.email,
             hashed_password=self.hash_password(request.password),
             profile_picture_url=request.profile_picture_url,
@@ -142,7 +149,7 @@ class AuthService:
         try:
             # Prefer phone OTP for account enablement (current `/verify-otp` contract uses phone).
             if getattr(request, "phone", None):
-                otp_send_result = self.otp_service.send_otp_phone(request.phone)
+                otp_send_result = self.otp_service.send_otp_phone(stored_phone)
             elif getattr(request, "email", None):
                 otp_send_result = self.otp_service.send_otp_email(request.email)
         except Exception as e:
@@ -165,17 +172,18 @@ class AuthService:
     
     def verify_and_enable_user(self, phone: str, otp: str):
         """Verify OTP and enable user account"""
-        # Validate OTP
-        is_valid = self.otp_service.validate_otp(phone=phone, otp=otp)
-        
+        normalized_phone = convert_to_local_ghana_format(phone)
+        is_valid = self.otp_service.validate_otp(phone=normalized_phone, otp=otp)
+        if not is_valid and normalized_phone != phone:
+            is_valid = self.otp_service.validate_otp(phone=phone, otp=otp)
+
         if not is_valid:
             return {
                 "success": False,
                 "message": "Invalid or expired OTP"
             }
-        
-        # Find user by phone
-        user = self.db.query(User).filter(User.phone == phone).first()
+
+        user = UserService(self.db).find_user_by_phone(normalized_phone or phone)
         
         if not user:
             return {

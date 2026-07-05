@@ -29,6 +29,7 @@ from core.nlu.service.account_access import (
     extract_phone_from_message,
     find_registered_user,
     friendly_account_required_message,
+    is_telegram_link_attempt,
     resolve_telegram_user,
     telegram_link_success_message,
 )
@@ -126,8 +127,7 @@ class AutobusNLUSystem:
         # Get conversation state
         state = self.conversation_manager.get_conversation_state(user_id)
 
-        phone_attempt = extract_phone_from_message(user_message or "")
-        if phone_attempt and channel_type(user_id) == "telegram":
+        if is_telegram_link_attempt(user_message or "") and channel_type(user_id) == "telegram":
             self.conversation_manager.update_conversation_history(user_id, "user", user_message)
             db = self.db_session or SessionLocal()
             should_close = self.db_session is None
@@ -142,7 +142,8 @@ class AutobusNLUSystem:
                     response = telegram_link_success_message(linked_user)
                 else:
                     response = friendly_account_required_message(
-                        "telegram", phone=phone_attempt
+                        "telegram",
+                        phone=extract_phone_from_message(user_message or ""),
                     )
             finally:
                 if should_close:
