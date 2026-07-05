@@ -138,28 +138,18 @@ class SlotManager:
     def _slot_description(self, intent: str, slot: str, bill_providers: Dict[str, str]) -> str:
         if slot == "quantity":
             return self._quantity_prompt(intent)
+        if slot == "description" and intent == "make_payment":
+            return "What is this payment for? (optional)"
 
         slot_descriptions = {
-            "recipient": "Who would you like to send money to? Please provide the phone number.",
+            "amount": "How much would you like to pay (in GHS)?",
+            "category": "Which category?",
+            "period": "For what period?",
+            "time_period": "For what time period?",
             "recipient_email": "What's the recipient's email address?",
             "sender_email": "What sender email address should we use when you send mail?",
             "subject": "What's the subject of the email?",
             "body": "What's the body/message of the email?",
-            "amount": "How much would you like to send?",
-            "network": "Which mobile network? (MTN, Vodafone, AirtelTigo)",
-            "reference": "What's the reference for this transfer?",
-            "phone_number": "Which phone number should I top up?",
-            "data_plan": "Which data plan would you like?",
-            "bill_type": self._generate_bill_type_prompt(bill_providers),
-            "account_number": "What's your account number (smart card number)?",
-            "provider": "Who is the service provider?",
-            "loan_amount": "How much would you like to borrow?",
-            "duration": "How long would you like the loan for?",
-            "purpose": "What will you use the loan for?",
-            "category": "Which category?",
-            "period": "For what period?",
-            "time_period": "For what time period?",
-            "customer_name": "What is the name of the customer (from your saved contacts)?",
             "item_name": "What product or item is being ordered?",
             "order_number": "Which order number should I invoice (e.g. ORD-20260318-12345)?",
             "order_id": "Which order ID should I invoice?",
@@ -171,9 +161,6 @@ class SlotManager:
             "photo": "Please send a photo of the product (you can send multiple images).",
             "photos": "Send more product photos, or say done when finished.",
             "update_field": "What would you like to update? (name, number)",
-            "new_customer_name": "What should the new customer name be?",
-            "customer_number": "Customer mobile number?",
-            "airtime_receiver_name": "What is the name of the person receiving the airtime?",
             "task_body": "What is the task? Describe what you need to do.",
             "schedule_type": (
                 "Should this task have a deadline, repeat on a schedule, or stay open with no date?\n"

@@ -86,32 +86,14 @@ INTENTS = {
         "required_slots": ["prompt"],
         "category": "video_generation"
     },
-    #==== FINANCIAL TIPS AGENT INTENTS =====
-    "financial_tips": {
-        "description": "Provide general financial advice and tips",
-        "slots": ["category", "time_period", "goal"],
-        "required_slots": [],
-        "category": "financial_tips"
+    # ===== PAYSTACK PAYMENT INTENTS =====
+    "make_payment": {
+        "description": "Initiate a secure Paystack payment checkout",
+        "slots": ["amount", "description"],
+        "required_slots": ["amount"],
+        "category": "payment"
     },
-    "budgeting_advice": {
-        "description": "Provide budgeting recommendations",
-        "slots": ["income_level", "expense_category", "savings_goal"],
-        "required_slots": [],
-        "category": "financial_tips"
-    },
-    "savings_tips": {
-        "description": "Offer savings strategies and advice",
-        "slots": ["savings_goal", "timeframe", "current_savings"],
-        "required_slots": [],
-        "category": "financial_tips"
-    },
-    "investment_advice": {
-        "description": "Provide basic investment guidance",
-        "slots": ["risk_tolerance", "investment_amount", "time_horizon"],
-        "required_slots": [],
-        "category": "financial_tips"
-    },
-    
+
     # ===== USER PROFILE MANAGEMENT INTENTS =====
     "update_username": {
         "description": "Update user username",
@@ -200,7 +182,7 @@ SYSTEM_PROMPTS = {
 
     ## Capabilities (when relevant)
     Conversational assistance, email, media generation, daily/weekly to-do briefings,
-    customer support context, financial tips, and profile updates — always scoped to the tenant organization.
+    secure Paystack payments, and profile updates — always scoped to the tenant organization.
 
     ## Response style
     - Be warm, professional, and direct.
@@ -227,25 +209,6 @@ SYSTEM_PROMPTS = {
     {context}
     """,
     
-    "financial_tips": """
-    You are a knowledgeable financial advisor assistant for the customer's organization in Ghana and Africa.
-    Provide practical, culturally relevant financial advice. Focus on:
-    - Savings techniques that work in local contexts
-    - Investment opportunities in the region
-    - Debt management specific to African economies
-
-    The following comprises of the user's spending data.
-    If there is no user financial data available, return with a message indicating user data not acquired yet.
-
-    Current User context: {context}
-    Financial topic: {category}
-
-    Notes for accuracy:
-        - Keep response very short and concise.
-        - Tailor advice to local economic conditions.
-        - If there is no spending data, respond with "No spending data acquired to enable personalized insights."
-    """,
-
     "expense_report": """
     You are a financial assistant for the customer's organization in Ghana. You help with generating expense reports using the date_send field in the transactions data.
     Focus on:
@@ -266,28 +229,11 @@ SYSTEM_PROMPTS = {
         - Strictly use the date_paid field for any time-based analysis and reporting.
     """,
 
-    "transactional": """
-    You are a financial assistant for the customer's organization in Ghana. You help with:
-    - Sending money via Mobile Money (MoMo)
-    - Buying airtime and data bundles
-    - Paying bills (utilities, TV subscriptions, etc.)
-    - Expense tracking and budgeting
-    - Loan applications
-    - Financial advice and insights
-    
-    Always be conversational, helpful, and clear. Ask for missing information politely.
-    If unsure, ask clarifying questions.
-    
-    Current User Context: {context}
-    Missing slots: {missing_slots}
-    """,
-
-    "customers": """
-    You are a business assistant for the customer's organization in Ghana. You can help users with managing customers.
-    Focus on:
-    - Adding new customers
-    - Viewing saved customers
-    - Deleting customers
+    "payment": """
+    You are a payment assistant for the customer's organization in Ghana.
+    Payments are processed securely through Paystack (card, bank transfer, and mobile money via Paystack checkout).
+    Help users initiate payments by collecting the amount and an optional description.
+    Do not promise to send money directly to phone numbers or buy airtime outside Paystack.
 
     Current User Context: {context}
     Missing slots: {missing_slots}
@@ -341,21 +287,19 @@ RESPONSE_TEMPLATES = {
         "error": "I apologize, but I couldn't generate the video. Please try again with a different prompt."
     },
     
-    "financial_tips": {
-        "financial_tips": "💡 {response}",
-        "budgeting_advice": "📊 Budgeting Tip: {response}",
-        "savings_tips": "💰 Savings Advice: {response}",
-        "investment_advice": "📈 Investment Insight: {response}",
-        "debt_management": "🎯 Debt Strategy: {response}"
+    "payment": {
+        "make_payment": "💳 Pay GHS {amount} securely via Paystack: {payment_url}\nReference: {reference}",
+        "missing_slots_make_payment": "I can set up a Paystack payment for you. Please provide: {missing_slots}",
+        "error": "I couldn't start the Paystack checkout right now. Please try again in a moment."
     },
-    
+
     "expense_report": {
         "success": "Your expense report has been generated successfully! Here are the details: {details}",
         "error": "I apologize, but I couldn't generate the expense report. Please try again."
     },
 
     "system": {
-        "intent_not_clear": "I want to help you get this done — could you tell me a bit more about what you're trying to accomplish? I can assist with tasks like adding todos or reminders, email, media generation, financial tips, daily or weekly to-do briefings, and profile updates."
+        "intent_not_clear": "I want to help you get this done — could you tell me a bit more about what you're trying to accomplish? I can assist with tasks like adding todos or reminders, email, media generation, Paystack payments, daily or weekly to-do briefings, and profile updates."
     },
     "task_management": {
         "daily_briefing": "{response}",
@@ -381,7 +325,7 @@ INTENT_CATEGORIES = {
     "email": ["send_email", "read_emails", "update_sender_email"],
     "image_generation": ["generate_image"],
     "video_generation": ["generate_video"],
-    "financial_tips": ["financial_tips", "budgeting_advice", "savings_tips", "investment_advice", "debt_management"],
+    "payment": ["make_payment"],
     "expense_report": ["expense_report", "generate_expense_report", "monthly_expense_summary",  "annual_expense_report", "daily_expense_report","transaction_info"],
     "user_management": ["update_user_details", "update_username", "update_phone_number", "view_user_profile"],
     "task_management": ["daily_briefing", "weekly_briefing", "add_task"],

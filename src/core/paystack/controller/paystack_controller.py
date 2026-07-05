@@ -28,7 +28,7 @@ async def initialize_paystack_transaction(
 ):
     """
     Initialize a Paystack transaction.
-    Returns an access_code that your Flutter app needs to launch the payment UI.
+    Returns an authorization_url for the user to complete payment in their browser.
     """
     # Get current user from JWT
     current_user_email = authjwt.get_jwt_subject()

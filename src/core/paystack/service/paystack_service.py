@@ -37,7 +37,7 @@ class PaystackService:
     ) -> PaystackInitializeResponse:
         """
         Initialize a Paystack transaction
-        This is called from your backend to get the access_code for the Flutter SDK
+        This is called from your backend to get a Paystack checkout URL.
         """
         # Get user from database
         user = self.db.query(User).filter(User.id == user_id).first()

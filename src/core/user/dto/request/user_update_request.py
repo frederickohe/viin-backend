@@ -21,6 +21,8 @@ class UserUpdateRequest(BaseModel):
     company: Optional[str] = None
     current_branch: Optional[str] = None
     staff_id: Optional[str] = None
+    occupation: Optional[str] = None
+    organization_workplace: Optional[str] = None
 
     # Social Media Profiles
     facebook_url: Optional[str] = None

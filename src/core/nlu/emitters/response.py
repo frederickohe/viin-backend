@@ -12,11 +12,7 @@ class ResponseFormatter:
         
         elif message_type == "confirm_action":
             action_descriptions = {
-                "send_money": f"send GHS {kwargs.get('amount')} to {kwargs.get('recipient')}",
-                "buy_airtime": f"buy GHS {kwargs.get('amount')} airtime for {kwargs.get('phone_number')}",
-                "buy_data": f"buy {kwargs.get('data_plan')} data for {kwargs.get('phone_number')}",
-                "pay_bill": f"pay {kwargs.get('bill_type')} bill of GHS {kwargs.get('amount')}",
-                "get_loan": f"apply for a GHS {kwargs.get('loan_amount')} loan"
+                "make_payment": f"pay GHS {kwargs.get('amount')} via Paystack",
             }
             action_desc = action_descriptions.get(intent, "complete this transaction")
             return f"🔒 Please enter your 5-digit PIN to confirm {action_desc}."
@@ -25,7 +21,7 @@ class ResponseFormatter:
             return f"✅ {kwargs.get('message', 'Action completed successfully!')}"
         
         elif message_type == "intent_not_clear":
-            return "I'm not quite sure what you're asking. Could you please rephrase or provide more details? I can help you with: sending money, buying airtime, paying bills, tracking expenses, managing customers, or getting financial tips."
+            return "I'm not quite sure what you're asking. Could you please rephrase or provide more details? I can help you with: todos and reminders, email, media generation, Paystack payments, daily or weekly briefings, and profile updates."
         
         elif message_type == "error":
             return kwargs.get("message") or "Something went wrong. Please try again."

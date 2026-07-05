@@ -91,6 +91,19 @@ class BriefingResponse(BaseModel):
     item_count: int
 
 
+class MemoryListWithItemsResponse(BaseModel):
+    id: str
+    owner_user_id: str
+    name: str
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    items: List[MemoryListItemResponse] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
+
 class ReminderResponse(BaseModel):
     id: str
     owner_user_id: str

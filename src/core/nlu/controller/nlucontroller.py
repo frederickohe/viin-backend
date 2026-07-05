@@ -71,6 +71,49 @@ async def process_message(
             detail=f"Error processing message: {str(e)}"
         )
 
+@nlu_routes.get("/chat-updates")
+async def get_chat_updates(
+    phone: str,
+    since: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Return assistant messages (including due-task reminders) for the web chat UI.
+    Pass ``since`` as an ISO timestamp to receive only newer messages.
+    """
+    try:
+        user_service = UserService(db)
+        current_user = user_service.get_user_by_phone(phone)
+        if not current_user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+        state = nlu_system.conversation_manager.get_conversation_state(current_user.phone)
+        history = state.conversation_history or []
+        assistant_messages = [
+            m for m in history
+            if (m.get("role") == "assistant")
+        ]
+        if since:
+            assistant_messages = [
+                m for m in assistant_messages
+                if (m.get("timestamp") or "") > since
+            ]
+
+        return {
+            "user_id": current_user.phone,
+            "messages": assistant_messages,
+            "success": True,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching chat updates: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching chat updates: {str(e)}",
+        )
+
+
 @nlu_routes.get("/conversation-history")
 async def get_conversation_history(
     user_id: str,
@@ -87,11 +130,10 @@ async def get_conversation_history(
 
         current_user = user_service.get_user_by_phone(user_id)
 
-        
-        conversation_state = nlu_system.conversation_manager.get_conversation_state(current_user)
+        conversation_state = nlu_system.conversation_manager.get_conversation_state(current_user.phone)
         
         return {
-            "user_id": current_user,
+            "user_id": current_user.phone,
             "conversation_history": conversation_state.conversation_history,
             "current_intent": conversation_state.current_intent,
             "collected_slots": conversation_state.collected_slots
@@ -119,7 +161,7 @@ async def clear_conversation_history(
 
         current_user = user_service.get_user_by_phone(user_id)
         
-        nlu_system.conversation_manager.reset_conversation_state(current_user)
+        nlu_system.conversation_manager.reset_conversation_state(current_user.phone)
         
         return {
             "success": True,

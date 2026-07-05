@@ -1,6 +1,6 @@
 from typing import Dict, List, Any, Tuple
 import logging
-from core.nlu.config import INTENTS, MODEL, SYSTEM_PROMPTS
+from core.nlu.config import INTENTS, MODEL, SYSTEM_PROMPTS, VENDOR_EXCLUSION_RULES
 from core.nlu.service.llmclient import LLMClient  # Add this import
 from utilities.phone_utils import extract_ghana_phone_numbers_from_text, clean_ocr_text
 
@@ -22,11 +22,10 @@ class IntentDetector:
         # Prepare conversation context
         context = self._prepare_context(conversation_history)
         
-        # Use transactional system prompt for intent detection
-        system_prompt = SYSTEM_PROMPTS["transactional"].format(
-            context=context, 
-            missing_slots="",
-            category="intent detection"
+        # Use conversational system prompt for intent detection
+        system_prompt = SYSTEM_PROMPTS["conversational"].format(
+            context=context,
+            vendor_rules=VENDOR_EXCLUSION_RULES.strip(),
         )
 
         # Enhanced prompt with context awareness and precision
@@ -167,37 +166,6 @@ class IntentDetector:
 
             # Parse the LLM response
             intent, slots, missing_slots = self._parse_response(response_text)
-            
-            # FALLBACK: If image phones were extracted but not found in slots, try to add them
-            if extracted_phones_from_image and intent in ["send_money", "buy_airtime", "pay_bill"]:
-                # Check if the user message references "this number" or similar but no phone was extracted
-                user_msg_lower = user_message.lower()
-                has_phone_reference = any(phrase in user_msg_lower for phrase in 
-                    ["this number", "that number", "the number", "send to this", "send to that", 
-                     "top up this", "buy for this", "send money to this"])
-                
-                phone_slots = ["recipient", "phone_number", "account_number"]
-                has_empty_phone_slot = any(slot in missing_slots for slot in phone_slots)
-                
-                if has_phone_reference and has_empty_phone_slot and len(extracted_phones_from_image) > 0:
-                    # Use the first extracted phone
-                    first_phone = extracted_phones_from_image[0]
-                    # Try to find the right slot name
-                    if intent == "send_money" and "recipient" in phone_slots:
-                        slots["recipient"] = first_phone
-                        if "recipient" in missing_slots:
-                            missing_slots.remove("recipient")
-                    elif intent == "buy_airtime" and "phone_number" in phone_slots:
-                        slots["phone_number"] = first_phone
-                        if "phone_number" in missing_slots:
-                            missing_slots.remove("phone_number")
-                    elif intent == "pay_bill" and "account_number" in phone_slots:
-                        slots["account_number"] = first_phone
-                        if "account_number" in missing_slots:
-                            missing_slots.remove("account_number")
-                    
-                    logger.info(f"[FALLBACK] Added extracted phone {first_phone} to slots for intent {intent}")
-            
             return intent, slots, missing_slots
             
         except Exception as e:
@@ -273,6 +241,14 @@ class IntentDetector:
         - If the user gives task + schedule in one message, extract all applicable slots.
         - If continuing add_task, keep intent add_task and only fill missing slots from the latest message.
         - schedule_type values: use "open" for no date, "deadline" for one-time due date, "recurring" for repeating tasks.
+
+        PAYSTACK PAYMENTS:
+        - User wants to pay, make a payment, checkout, or subscribe via Paystack → make_payment
+        - Examples: "pay 50 cedis", "I want to make a payment of 100", "start a Paystack checkout for 25 GHS"
+        - Slots:
+          • amount — payment amount in GHS (required)
+          • description — optional note about what the payment is for
+        - Do NOT use make_payment for direct mobile-money transfers, airtime top-ups, or bill payments to phone numbers.
         """
         
         current_intent_context = f"CURRENT_INTENT: {current_intent if current_intent else 'Intent Extraction'}"
@@ -310,8 +286,6 @@ class IntentDetector:
         {self._format_intents_for_prompt()}
         
         DECISION PROCESS:
-        - Is this a QUERY about PAST transactions? (how much, have I, did I send/bought) → expense_report
-        - Is this an ACTION request? (buy, send, pay in command form) → transactional intent
         - Is this message clearly about a NEW intent? → Use new intent
         - Is this message continuing/refining the CURRENT intent? → Keep current intent
         - Is this message ambiguous but contextually related? → Prefer current intent
@@ -322,60 +296,19 @@ class IntentDetector:
         MISSING: [comma_separated_missing_slots]
         
         Examples:
-        User starts send_money: "Send 50 cedis to 0234567890"
-        INTENT: send_money
-        SLOTS: {{"amount": "50", "recipient": "0234567890"}}
-        MISSING: reference
-
-        User queries expense report: "How much airtime have I sent to wifey today?"
-        INTENT: expense_report
-        SLOTS: {{"category": "airtime", "time_period": "TODAY"}}
+        User starts make_payment: "Pay 50 cedis"
+        INTENT: make_payment
+        SLOTS: {{"amount": "50"}}
         MISSING:
 
-        User queries expense report: "How much money did I send this week?"
-        INTENT: expense_report
-        SLOTS: {{"category": "money_transfer", "time_period": "WEEK_1"}}
+        User starts make_payment: "I want to pay 100 cedis for my subscription"
+        INTENT: make_payment
+        SLOTS: {{"amount": "100", "description": "subscription"}}
         MISSING:
 
-        User starts bill payment: "Make bill payment of 1 cedi to 95200204493"
-        INTENT: pay_bill
-        SLOTS: {{"amount": "1", "account_number": "95200204493"}}
-        MISSING: bill_type
-        MISSING: bill_type
-
-        User continues bill payment: "ECG, the card number is 95200204493"
-        INTENT: pay_bill
-        SLOTS: {{"bill_type": "ECG", "account_number": "95200204493"}}
-        MISSING:
-
-        User continues bill payment: "ECG, My account number is 95200204493 and I would like to send 1 cedi"
-        INTENT: pay_bill
-        SLOTS: {{"bill_type": "ECG", "account_number": "95200204493", "amount": "1"}}
-        MISSING:
-
-        User starts bill payment: "Pay my DStv bill, account 1234567890, amount is 50 cedis"
-        INTENT: pay_bill
-        SLOTS: {{"bill_type": "DStv", "account_number": "1234567890", "amount": "50"}}
-        MISSING:
-
-        User starts buy_airtime: "Buy me 5 cedis airtime to 0550748724"
-        INTENT: buy_airtime
-        SLOTS: {{"amount": "5", "phone_number": "0550748724"}}
-        MISSING: network
-
-        User queries expense: "How much airtime did I buy last month?"
-        INTENT: expense_report
-        SLOTS: {{"category": "airtime", "time_period": "MONTH_1"}}
-        MISSING:
-
-        User continues current intent: "Actually, make it 100 cedis instead"
-        INTENT: send_money
-        SLOTS: {{"amount": "100"}}
-        MISSING: recipient,reference
-
-        User starts new intent: "I want to check my balance"
-        INTENT: check_balance
-        SLOTS: {{}}
+        User continues make_payment: "Actually, make it 75 cedis"
+        INTENT: make_payment
+        SLOTS: {{"amount": "75"}}
         MISSING:
 
         User starts add_task: "Add a task to buy groceries"
@@ -410,8 +343,7 @@ class IntentDetector:
         Examples end.
 
         Notes for accuracy:
-        - Past tense verbs with query markers = expense_report
-        - Imperative action verbs (buy, send, pay) = transactional
+        - Payment requests routed through Paystack use make_payment
         - If the user's message clarifies or adds to the **current intent**, do not change it.
         - Only switch intent if the message explicitly refers to a different goal or action.
         - Always ensure `SLOTS` is valid JSON.

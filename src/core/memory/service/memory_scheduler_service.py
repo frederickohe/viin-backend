@@ -13,9 +13,9 @@ from core.memory.model.delivery_log import MemoryDeliveryLog
 from core.memory.model.memory_enums import DeliveryStatus, ReminderStatus
 from core.memory.model.reminder import Reminder
 from core.memory.service.briefing_service import BriefingPeriod, BriefingService
+from core.memory.service.reminder_delivery_service import ReminderDeliveryService
 from core.user.model.User import User
 from core.webhooks.service.whatsapp_service import WhatsAppService
-from core.webhooks.service.telegram_service import TelegramService
 from utilities.dbconfig import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -29,12 +29,14 @@ class MemorySchedulerService:
     _scheduler_instance: Optional[BackgroundScheduler] = None
 
     DEFAULT_REMINDER_POLL_SECONDS = 20
+    DEFAULT_GOOGLE_CALENDAR_SYNC_SECONDS = 900
 
     def __init__(self) -> None:
         if MemorySchedulerService._scheduler_instance is None:
             MemorySchedulerService._scheduler_instance = BackgroundScheduler()
         self.scheduler = MemorySchedulerService._scheduler_instance
         self.poll_seconds = self._get_poll_interval()
+        self.delivery_service = ReminderDeliveryService()
 
     @staticmethod
     def _get_poll_interval() -> int:
@@ -42,6 +44,24 @@ class MemorySchedulerService:
             return int(os.getenv("MEMORY_REMINDER_POLL_SECONDS", MemorySchedulerService.DEFAULT_REMINDER_POLL_SECONDS))
         except Exception:
             return MemorySchedulerService.DEFAULT_REMINDER_POLL_SECONDS
+
+    @staticmethod
+    def _google_calendar_sync_enabled() -> bool:
+        from core.integrations.service.google_calendar_oauth_service import GoogleCalendarOAuthService
+
+        return GoogleCalendarOAuthService.is_configured()
+
+    @staticmethod
+    def _get_google_calendar_sync_interval() -> int:
+        try:
+            return int(
+                os.getenv(
+                    "GOOGLE_CALENDAR_SYNC_SECONDS",
+                    MemorySchedulerService.DEFAULT_GOOGLE_CALENDAR_SYNC_SECONDS,
+                )
+            )
+        except Exception:
+            return MemorySchedulerService.DEFAULT_GOOGLE_CALENDAR_SYNC_SECONDS
 
     @staticmethod
     def _daily_briefing_enabled() -> bool:
@@ -87,6 +107,20 @@ class MemorySchedulerService:
                     "[MEMORY_SCHEDULER] Daily briefing enabled (hour_utc=%s)",
                     self._daily_briefing_hour_utc(),
                 )
+            if self._google_calendar_sync_enabled():
+                sync_seconds = max(60, self._get_google_calendar_sync_interval())
+                self.scheduler.add_job(
+                    func=self._poll_google_calendar_sync,
+                    trigger="interval",
+                    seconds=sync_seconds,
+                    id="google_calendar_sync_poll",
+                    replace_existing=True,
+                    max_instances=1,
+                )
+                logger.info(
+                    "[MEMORY_SCHEDULER] Google Calendar sync enabled (poll=%ss)",
+                    sync_seconds,
+                )
             if not self.scheduler.running:
                 self.scheduler.start()
                 logger.info("[MEMORY_SCHEDULER] Started (poll=%ss)", self.poll_seconds)
@@ -122,75 +156,64 @@ class MemorySchedulerService:
         finally:
             db.close()
 
+    def _poll_google_calendar_sync(self) -> None:
+        db = SessionLocal()
+        try:
+            from core.integrations.service.google_calendar_sync_service import GoogleCalendarSyncService
+
+            synced = GoogleCalendarSyncService(db).sync_all_enabled_connections()
+            if synced:
+                logger.info("[GOOGLE_CALENDAR] Synced %s connection(s)", synced)
+        except Exception as e:
+            logger.error("[GOOGLE_CALENDAR] sync poll failed: %s", e, exc_info=True)
+        finally:
+            db.close()
+
     def _deliver_reminder(self, db: Session, r: Reminder) -> None:
         owner_id = (r.owner_user_id or "").strip()
         user = db.query(User).filter(User.id == owner_id).first()
 
-        channel = (r.delivery or {}).get("channel")
-        if not channel:
-            if owner_id.startswith("tg:"):
-                channel = "telegram"
-            elif user:
-                channel = "whatsapp"
-            else:
-                channel = "whatsapp"
-
-        subject = r.title
-        body = r.body
+        message = self.delivery_service.build_message(r)
+        channels = self.delivery_service.resolve_channels(r, user)
         log_user_id = user.id if user else owner_id
 
         log = MemoryDeliveryLog(
             id=uuid.uuid4().hex,
             user_id=log_user_id,
-            channel=str(channel),
+            channel=",".join(channels),
             kind="reminder",
             reminder_id=r.id,
-            subject=subject,
-            body=body,
-            payload={"due_at": r.due_at.isoformat(), "rrule": r.rrule, "delivery": r.delivery or {}},
+            subject=r.title,
+            body=message,
+            payload={
+                "due_at": r.due_at.isoformat(),
+                "rrule": r.rrule,
+                "delivery": r.delivery or {},
+                "channels": channels,
+            },
             status=DeliveryStatus.PENDING,
             created_at=_now(),
         )
         db.add(log)
         db.commit()
 
-        ok = False
-        err: Optional[str] = None
+        any_success, channel_results = self.delivery_service.deliver(db, r, user)
+        errors = [f"{item['channel']}: {item['error']}" for item in channel_results if item.get("error")]
+        log.payload = {**(log.payload or {}), "channel_results": channel_results}
 
-        if str(channel).lower() == "telegram":
-            chat_id = owner_id.removeprefix("tg:").strip()
-            if not chat_id:
-                err = "Invalid Telegram owner_user_id"
-            else:
-                msg = f"Reminder{': ' + subject if subject else ''}\n{body}"
-                ok = TelegramService().send_message(chat_id=chat_id, message_text=msg)
-                if not ok:
-                    err = "Telegram send_message failed"
-        elif str(channel).lower() == "whatsapp":
-            if not user:
-                err = f"No user record for WhatsApp delivery (owner_user_id={owner_id})"
-            else:
-                phone_id = (os.getenv("WHATSAPP_phone_ID") or "").strip()
-                recipient = (getattr(user, "whatsapp_number", None) or getattr(user, "phone", None) or "").strip()
-                if not phone_id or not recipient:
-                    err = "Missing WHATSAPP_phone_ID or recipient phone"
-                else:
-                    msg = f"Reminder{': ' + subject if subject else ''}\n{body}"
-                    ok = WhatsAppService().send_message(phone_id=phone_id, recipient_phone=recipient, message_text=msg)
-                    if not ok:
-                        err = "WhatsApp send_message failed"
-        else:
-            err = f"Unsupported channel: {channel}"
-
-        if ok:
+        if any_success:
             log.status = DeliveryStatus.SENT
             log.sent_at = _now()
-            r.status = ReminderStatus.SENT
+            next_due = self.delivery_service.advance_recurrence(r)
+            if next_due:
+                r.due_at = next_due
+                r.status = ReminderStatus.SCHEDULED
+            else:
+                r.status = ReminderStatus.SENT
         else:
             log.status = DeliveryStatus.FAILED
-            log.error = err or "Delivery failed"
-            # Keep SCHEDULED for Telegram/unresolved deliveries so overdue items stay visible.
-            if not (owner_id.startswith("tg:") and str(channel).lower() == "telegram"):
+            log.error = "; ".join(errors) if errors else "Delivery failed"
+            if not owner_id.startswith("tg:"):
                 r.status = ReminderStatus.FAILED
 
         db.add(log)

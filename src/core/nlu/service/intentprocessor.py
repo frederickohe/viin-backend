@@ -1,10 +1,12 @@
 # core/nlu/service/intent_processor.py
+import asyncio
 import json
 import re
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Any, Optional
 from core.nlu.service.llmclient import LLMClient
 from core.nlu.config import SYSTEM_PROMPTS, RESPONSE_TEMPLATES, VENDOR_EXCLUSION_RULES
+from config import settings
 from core.nlu.service.datapipe.dataconfig import FINANCIAL_INSIGHTS_SYSTEM_PROMPT, INSIGHTS_SYSTEM_PROMPT
 from core.nlu.service.datapipe.user_rag import UserRAGManager
 from core.user.controller.usercontroller import get_db
@@ -94,34 +96,75 @@ class IntentProcessor:
         )
         
         return self._format_conversational_response(intent, response, slots)
-    
-    def process_financial_tips_intent(
+
+    def process_payment_intent(
         self,
         intent: str,
-        user_message: str,
-        conversation_history: List[Dict],
         slots: Dict[str, Any],
-        user_data: Optional[Dict] = None  # Add user_data parameter
+        user_data: Optional[Dict] = None,
     ) -> str:
-        """
-        Process financial tips with personalized user context
-        """
-        # Prepare enhanced system prompt with user context
-        system_prompt = self._build_enhanced_system_prompt(
-            base_prompt=SYSTEM_PROMPTS["financial_tips"],
-            user_data=user_data,
-            intent=intent,
-            slots=slots
+        """Initialize a Paystack checkout for the user."""
+        from core.paystack.dto.request.paystack_request import PaystackInitializeRequest
+        from core.paystack.service.paystack_service import PaystackService
+
+        email = (user_data or {}).get("email", "").strip()
+        user_id = (user_data or {}).get("db_user_id") or (user_data or {}).get("user_id")
+        if not email:
+            return (
+                "I need an email address on your account to start a Paystack payment. "
+                "Please update your profile and try again."
+            )
+        if not user_id:
+            return RESPONSE_TEMPLATES["payment"]["error"]
+
+        try:
+            amount_ghs = float(slots.get("amount", 0))
+        except (TypeError, ValueError):
+            return "Please provide a valid payment amount in GHS."
+
+        if amount_ghs <= 0:
+            return "Please provide a payment amount greater than zero."
+
+        amount_pesewas = int(round(amount_ghs * 100))
+        description = (slots.get("description") or "").strip()
+        metadata = {"description": description} if description else None
+        callback_url = (settings.PAYSTACK_BILLING_CALLBACK_URL or "").strip() or None
+
+        db = self.db_session
+        should_close = False
+        if db is None:
+            from utilities.dbconfig import SessionLocal
+            db = SessionLocal()
+            should_close = True
+
+        paystack_service = PaystackService(db)
+        request = PaystackInitializeRequest(
+            email=email,
+            amount=amount_pesewas,
+            metadata=metadata,
+            callback_url=callback_url,
         )
-        
-        response = self.llm_client.chat_completion(
-            system_prompt=system_prompt,
-            user_message=user_message,
-            conversation_history=conversation_history,
-            temperature=0.4
+
+        try:
+            result = asyncio.run(
+                paystack_service.initialize_transaction(user_id=str(user_id), request=request)
+            )
+        except Exception as exc:
+            logger.exception("Paystack initialize failed for user %s: %s", user_id, exc)
+            return RESPONSE_TEMPLATES["payment"]["error"]
+        finally:
+            if should_close:
+                db.close()
+
+        if not result.authorization_url:
+            return RESPONSE_TEMPLATES["payment"]["error"]
+
+        template = RESPONSE_TEMPLATES["payment"]["make_payment"]
+        return template.format(
+            amount=f"{amount_ghs:.2f}",
+            payment_url=result.authorization_url,
+            reference=result.reference or "",
         )
-        
-        return self._format_financial_tips_response(intent, response, slots)
 
     def process_expense_report_intent(
         self,
@@ -280,16 +323,6 @@ class IntentProcessor:
     def _format_conversational_response(self, intent: str, response: str, slots: Dict) -> str:
         """Format conversational responses using templates"""
         template_data = RESPONSE_TEMPLATES["conversational"]
-        
-        if intent in template_data:
-            template = template_data[intent]
-            return template.format(response=response, **slots)
-        
-        return response
-
-    def _format_financial_tips_response(self, intent: str, response: str, slots: Dict) -> str:
-        """Format financial tips responses using templates"""
-        template_data = RESPONSE_TEMPLATES["financial_tips"]
         
         if intent in template_data:
             template = template_data[intent]

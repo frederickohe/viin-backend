@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from core.memory.service.memory_service import MemoryService
+from core.memory.service.reminder_delivery_service import ReminderDeliveryService
 
 _DEFAULT_LIST_NAME = "Tasks"
 
@@ -162,12 +163,32 @@ class TaskIntentService:
         self.db = db
         self.memory = MemoryService(db)
 
-    def create_from_slots(self, *, owner_user_id: str, slots: Dict[str, str]) -> str:
+    @staticmethod
+    def _delivery_confirmation(delivery: dict) -> str:
+        channels = [str(c).lower() for c in (delivery or {}).get("channels", [])]
+        if "telegram" in channels:
+            return "You'll get a Telegram reminder when it's due."
+        if "chat" in channels and "sms" in channels:
+            return "You'll get a chat and SMS reminder when it's due."
+        if "chat" in channels:
+            return "You'll get a chat reminder when it's due."
+        if "sms" in channels:
+            return "You'll get an SMS reminder when it's due."
+        return "You'll get a reminder when it's due."
+
+    def create_from_slots(
+        self,
+        *,
+        owner_user_id: str,
+        slots: Dict[str, str],
+        delivery: Optional[dict] = None,
+    ) -> str:
         body = (slots.get("task_body") or "").strip()
         if not body:
             raise HTTPException(status_code=400, detail="Task description is required.")
 
         schedule = normalize_schedule_type(slots.get("schedule_type"))
+        reminder_delivery = delivery or ReminderDeliveryService.default_delivery_for_owner(owner_user_id)
         if schedule == "open":
             return self._create_open_task(owner_user_id=owner_user_id, body=body)
         if schedule == "deadline":
@@ -181,8 +202,9 @@ class TaskIntentService:
                 body=body,
                 due_at=due_at,
                 title=body[:200],
+                delivery=reminder_delivery,
             )
-            return f"✅ Reminder set for {self._format_user_datetime(due_at)}: {body}"
+            return f"✅ Reminder set for {self._format_user_datetime(due_at)}: {body}\n{self._delivery_confirmation(reminder_delivery)}"
         if schedule == "recurring":
             freq = normalize_repeat_frequency(slots.get("repeat_frequency"))
             if not freq:
@@ -201,10 +223,12 @@ class TaskIntentService:
                 due_at=due_at,
                 title=body[:200],
                 rrule=f"FREQ={freq}",
+                delivery=reminder_delivery,
             )
             label = freq.lower()
             return (
-                f"✅ Recurring task set ({label}, starting {self._format_user_datetime(due_at)}): {body}"
+                f"✅ Recurring task set ({label}, starting {self._format_user_datetime(due_at)}): {body}\n"
+                f"{self._delivery_confirmation(reminder_delivery)}"
             )
 
         raise HTTPException(

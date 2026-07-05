@@ -14,11 +14,12 @@ from core.memory.dto.memory_dtos import (
     MemoryListItemCreateRequest,
     MemoryListItemResponse,
     MemoryListResponse,
+    MemoryListWithItemsResponse,
     MemorySearchResponse,
     ReminderCreateRequest,
     ReminderResponse,
 )
-from core.memory.model.memory_enums import MemoryItemType
+from core.memory.model.memory_enums import MemoryItemType, ReminderStatus
 from core.memory.service.briefing_service import BriefingPeriod, BriefingService
 from core.memory.service.memory_service import MemoryService
 from core.user.service.user_service import UserService
@@ -139,6 +140,83 @@ def add_list_item(
     current_user_email = authjwt.get_jwt_subject()
     user = UserService(db).get_current_user(current_user_email)
     row = MemoryService(db).add_list_item(owner_user_id=user.id, list_id=list_id, text=payload.text)
+    return MemoryListItemResponse.model_validate(row)
+
+
+@memory_routes.get("/reminders", response_model=list[ReminderResponse])
+def list_reminders(
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+    status: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    current_user_email = authjwt.get_jwt_subject()
+    user = UserService(db).get_current_user(current_user_email)
+    status_enum = None
+    if status:
+        try:
+            status_enum = ReminderStatus(status.upper())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid reminder status")
+    rows = MemoryService(db).list_reminders(
+        owner_user_id=user.id, status=status_enum, limit=limit
+    )
+    return [ReminderResponse.model_validate(r) for r in rows]
+
+
+@memory_routes.patch("/reminders/{reminder_id}/cancel", response_model=ReminderResponse)
+def cancel_reminder(
+    reminder_id: str,
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    current_user_email = authjwt.get_jwt_subject()
+    user = UserService(db).get_current_user(current_user_email)
+    r = MemoryService(db).cancel_reminder(owner_user_id=user.id, reminder_id=reminder_id)
+    return ReminderResponse.model_validate(r)
+
+
+@memory_routes.get("/lists", response_model=list[MemoryListWithItemsResponse])
+def list_lists(
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+):
+    current_user_email = authjwt.get_jwt_subject()
+    user = UserService(db).get_current_user(current_user_email)
+    svc = MemoryService(db)
+    lists = svc.list_lists(owner_user_id=user.id, limit=limit)
+    out: list[MemoryListWithItemsResponse] = []
+    for lst in lists:
+        items = svc.list_list_items(owner_user_id=user.id, list_id=lst.id)
+        out.append(
+            MemoryListWithItemsResponse(
+                id=lst.id,
+                owner_user_id=lst.owner_user_id,
+                name=lst.name,
+                description=lst.description,
+                created_at=lst.created_at,
+                updated_at=lst.updated_at,
+                items=[MemoryListItemResponse.model_validate(i) for i in items],
+            )
+        )
+    return out
+
+
+@memory_routes.patch(
+    "/lists/{list_id}/items/{item_id}/complete", response_model=MemoryListItemResponse
+)
+def complete_list_item(
+    list_id: str,
+    item_id: str,
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    current_user_email = authjwt.get_jwt_subject()
+    user = UserService(db).get_current_user(current_user_email)
+    row = MemoryService(db).complete_list_item(
+        owner_user_id=user.id, list_id=list_id, item_id=item_id
+    )
     return MemoryListItemResponse.model_validate(row)
 
 

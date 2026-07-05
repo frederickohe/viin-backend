@@ -87,6 +87,18 @@ class Settings(BaseSettings):
     PAYSTACK_SECRET_KEY: str = os.environ.get("PAYSTACK_SECRET_KEY", "").strip()
     PAYSTACK_BILLING_CALLBACK_URL: str = os.environ.get("PAYSTACK_BILLING_CALLBACK_URL", "").strip()
 
+    # Google Calendar OAuth
+    GOOGLE_OAUTH_CLIENT_ID: str = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+    GOOGLE_OAUTH_CLIENT_SECRET: str = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+    GOOGLE_OAUTH_REDIRECT_URI: str = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "").strip()
+    GOOGLE_CALENDAR_REMINDER_LEAD_MINUTES: int = int(
+        os.environ.get("GOOGLE_CALENDAR_REMINDER_LEAD_MINUTES", "15")
+    )
+    GOOGLE_CALENDAR_SYNC_SECONDS: int = int(os.environ.get("GOOGLE_CALENDAR_SYNC_SECONDS", "900"))
+    GOOGLE_CALENDAR_SYNC_HORIZON_DAYS: int = int(
+        os.environ.get("GOOGLE_CALENDAR_SYNC_HORIZON_DAYS", "30")
+    )
+
     @property
     def DB_DSN(self) -> URL:
         return URL.create(

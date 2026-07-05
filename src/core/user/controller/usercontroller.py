@@ -27,6 +27,10 @@ from core.user.dto.request.notification_settings_update_request import (
     NotificationSettingsUpdateRequest,
 )
 from core.user.dto.request.profile_image_update_request import ProfileImageUpdateRequest
+from core.user.dto.request.agent_update_request import AgentUpdateRequest
+from core.user.dto.response.user_agents_response import UserAgentsResponse
+from core.agent.agent_params import AGENT_REQUIRED_PARAMS
+from core.agent.tools.agent_config.user_agent_config_service import AgentConfigService
 from core.notification.service.notification_service import NotificationService
 from core.notification.dto.response.paged_notifications import PagedNotificationResponse
 from core.notification.model.Notification import NotificationStatus, NotificationType
@@ -254,6 +258,50 @@ def update_my_notification_settings(
         current_user_email,
         in_app_notification=data.get("in_app_notification"),
         sms_notification=data.get("sms_notification"),
+    )
+
+
+@user_routes.get("/me/agents", response_model=UserAgentsResponse)
+def get_my_agents(
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    current_user_email = authjwt.get_jwt_subject()
+    user_service = UserService(db)
+    user = user_service.get_current_user(current_user_email)
+    return UserAgentsResponse(
+        agents=user.agents or {},
+        available_agents=list(AGENT_REQUIRED_PARAMS.keys()),
+    )
+
+
+@user_routes.patch("/me/agents/{agent_name}", response_model=UserAgentsResponse)
+def update_my_agent(
+    agent_name: str,
+    payload: AgentUpdateRequest,
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    current_user_email = authjwt.get_jwt_subject()
+    user_service = UserService(db)
+    user = user_service.get_current_user(current_user_email)
+    if not user.phone:
+        raise HTTPException(status_code=400, detail="Phone number required to configure agents")
+
+    svc = AgentConfigService(db)
+    result = svc.create_or_update_agent(
+        user.phone,
+        agent_name,
+        payload.params,
+        status=payload.status or "active",
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Failed to update agent"))
+
+    user = user_service.get_current_user(current_user_email)
+    return UserAgentsResponse(
+        agents=user.agents or {},
+        available_agents=list(AGENT_REQUIRED_PARAMS.keys()),
     )
 
 

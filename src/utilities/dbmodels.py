@@ -28,6 +28,7 @@ _model_modules = [
 	"core.memory.model.reminder",
 	"core.memory.model.share_grant",
 	"core.memory.model.delivery_log",
+	"core.integrations.model.google_calendar_connection",
  
 ]
 

@@ -304,7 +304,7 @@ class AutobusNLUSystem:
     def _process_non_payment_intent(self, user_id: str, intent: str, user_message: str, conversation_history: List[Dict], slots: Dict) -> IntentHandlerResult:
         """Process non-payment intents; http_status 200 means fulfilled (terminal success)."""
         conversational_intents = INTENT_CATEGORIES["conversational"]
-        financial_tips_intents = INTENT_CATEGORIES["financial_tips"]
+        payment_intents = INTENT_CATEGORIES.get("payment", [])
         expense_report_intents = INTENT_CATEGORIES["expense_report"]
         user_management_intents = INTENT_CATEGORIES.get("user_management", [])
         task_management_intents = INTENT_CATEGORIES.get("task_management", [])
@@ -347,15 +347,13 @@ class AutobusNLUSystem:
                 user_data=user_data,
             )
             return IntentHandlerResult(msg, None)
-        elif intent in financial_tips_intents:
-            msg = self.intent_processor.process_financial_tips_intent(
+        elif intent in payment_intents:
+            msg = self.intent_processor.process_payment_intent(
                 intent,
-                user_message, 
-                conversation_history, 
                 slots,
-                user_data
+                user_data,
             )
-            return IntentHandlerResult(msg, None)
+            return IntentHandlerResult(msg, 200)
         elif intent in expense_report_intents:
             # Check if time_period was already extracted from the user message
             time_period = slots.get("time_period")
@@ -700,15 +698,18 @@ class AutobusNLUSystem:
         user_data: Optional[Dict[str, Any]],
     ) -> IntentHandlerResult:
         """Create a task from collected slots (open todo, deadline reminder, or recurring reminder)."""
+        from core.memory.service.reminder_delivery_service import ReminderDeliveryService
         from core.memory.service.task_intent_service import TaskIntentService
 
         db = self.db_session or SessionLocal()
         should_close = self.db_session is None
         try:
             internal_user_id = self._resolve_internal_user_id(user_id, user_data)
+            delivery = ReminderDeliveryService.default_delivery_for_owner(user_id)
             msg = TaskIntentService(db).create_from_slots(
                 owner_user_id=internal_user_id,
                 slots=slots,
+                delivery=delivery,
             )
             logger.info("Created task for user %s (owner=%s)", user_id, internal_user_id)
             return IntentHandlerResult(msg, 200)

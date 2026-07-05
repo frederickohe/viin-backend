@@ -26,5 +26,5 @@ class SecurityManager:
     
     def is_pin_required(self, intent: str) -> bool:
         """Check if PIN is required for an intent"""
-        secure_intents = ["send_money", "buy_airtime", "buy_data", "pay_bill", "get_loan"]
+        secure_intents = ["make_payment"]
         return intent in secure_intents
