@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from core.notification.model.Notification import Notification, NotificationStatus, NotificationType
 from core.user.model.User import User
+from core.user.notification_preferences import allows_in_app_notifications, allows_sms_notifications
 from core.wirepick.service.wirepickservice import WirepickSMSService, WirepickSMSException
 from config import settings
 
@@ -73,8 +74,15 @@ class NotificationService:
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
+        if not allows_in_app_notifications(user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="In-app notifications are disabled for this user",
+            )
+
         # Determine SMS phone number (use provided or from user profile)
         sms_phone_to_use = sms_phone or getattr(user, 'phone', None)
+        should_send_sms = send_sms and allows_sms_notifications(user)
         
         # Create notification record
         notification = Notification(
@@ -91,8 +99,8 @@ class NotificationService:
         self.db.commit()
         self.db.refresh(notification)
 
-        # Send SMS if enabled and phone number available
-        if send_sms and self.sms_enabled and sms_phone_to_use:
+        # Send SMS if enabled, opted in, and phone number available
+        if should_send_sms and self.sms_enabled and sms_phone_to_use:
             try:
                 self._send_sms_notification(notification.id, sms_phone_to_use, notification_type, data)
             except Exception as e:
@@ -153,7 +161,7 @@ class NotificationService:
         for user_id in user_ids:
             try:
                 user = self.db.query(User).filter(User.id == user_id).first()
-                if user and hasattr(user, 'phone') and user.phone:
+                if user and allows_sms_notifications(user) and hasattr(user, 'phone') and user.phone:
                     notification_data = data or {}
                     notification_data['message'] = message
                     

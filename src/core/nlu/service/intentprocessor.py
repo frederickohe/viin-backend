@@ -11,6 +11,7 @@ from core.nlu.service.datapipe.user_rag import UserRAGManager
 from core.user.controller.usercontroller import get_db
 from utilities.phone_utils import normalize_ghana_phone_number
 import logging
+from fastapi import HTTPException
 from core.nlu.service.datapipe.dataengine import EnhancedUserRAGManager
 
 from core.agent.tools.agent_config.user_agent_config_service import AgentConfigService
@@ -126,6 +127,7 @@ class IntentProcessor:
         """Initialize a Paystack checkout for the user."""
         from core.paystack.dto.request.paystack_request import PaystackInitializeRequest
         from core.paystack.service.paystack_customer import resolve_paystack_customer_email
+        from core.paystack.service.paystack_errors import format_paystack_user_message
         from core.paystack.service.paystack_service import PaystackService
         from core.user.model.User import User
 
@@ -210,6 +212,9 @@ class IntentProcessor:
                 user_id=str(user_id),
                 request=request,
             )
+        except HTTPException as exc:
+            logger.error("Paystack initialize failed for user %s: %s", user_id, exc.detail)
+            return format_paystack_user_message(exc.detail)
         except Exception as exc:
             logger.exception("Paystack initialize failed for user %s: %s", user_id, exc)
             return RESPONSE_TEMPLATES["payment"]["error"]

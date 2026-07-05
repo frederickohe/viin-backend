@@ -16,6 +16,7 @@ from core.memory.model.reminder import Reminder
 from core.memory.service.briefing_service import BriefingPeriod, BriefingService
 from core.memory.service.reminder_delivery_service import ReminderDeliveryService
 from core.user.model.User import User
+from core.user.notification_preferences import allows_in_app_notifications
 from core.webhooks.service.whatsapp_service import WhatsAppService
 from utilities.dbconfig import SessionLocal
 
@@ -206,7 +207,7 @@ class MemorySchedulerService:
         user = db.query(User).filter(User.id == owner_id).first()
 
         message = self.delivery_service.build_message(r)
-        channels = self.delivery_service.resolve_channels(r, user)
+        channels = self.delivery_service.effective_channels(r, user)
         log_user_id = user.id if user else owner_id
 
         log = MemoryDeliveryLog(
@@ -313,6 +314,12 @@ class MemorySchedulerService:
     def _deliver_daily_briefing(self, db: Session, user_id: str) -> None:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
+            return
+        if not allows_in_app_notifications(user):
+            logger.debug(
+                "[MEMORY_BRIEFING] Skipping daily briefing for user_id=%s: in-app notifications disabled",
+                user_id,
+            )
             return
 
         briefing_svc = BriefingService(db)

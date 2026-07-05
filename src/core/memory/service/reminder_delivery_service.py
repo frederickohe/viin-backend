@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from core.memory.model.reminder import Reminder
 from core.nlu.service.conversation_manager import ConversationManager
 from core.user.model.User import User
+from core.user.notification_preferences import filter_channels_by_user_prefs
 from core.webhooks.service.telegram_service import TelegramService
 from core.webhooks.service.whatsapp_service import WhatsAppService
 from core.wirepick.service.wirepickservice import WirepickSMSService, WirepickSMSException
@@ -74,6 +75,9 @@ class ReminderDeliveryService:
         if user and (os.getenv("WHATSAPP_phone_ID") or "").strip():
             return ["whatsapp", "sms"]
         return ["chat", "sms"]
+
+    def effective_channels(self, reminder: Reminder, user: Optional[User]) -> List[str]:
+        return filter_channels_by_user_prefs(self.resolve_channels(reminder, user), user)
 
     @staticmethod
     def conversation_user_id(user: User, owner_user_id: str) -> Optional[str]:
@@ -191,9 +195,20 @@ class ReminderDeliveryService:
         """
         message = self.build_message(reminder)
         sms_message = self.build_sms_message(reminder)
-        channels = self.resolve_channels(reminder, user)
+        requested_channels = self.resolve_channels(reminder, user)
+        channels = self.effective_channels(reminder, user)
         conv_user_id = self.conversation_user_id(user, reminder.owner_user_id or "")
         results: List[dict] = []
+
+        skipped = set(requested_channels) - set(channels)
+        for channel in sorted(skipped):
+            results.append(
+                {
+                    "channel": channel,
+                    "ok": False,
+                    "error": "Disabled by user notification preferences",
+                }
+            )
 
         for channel in channels:
             ok = False

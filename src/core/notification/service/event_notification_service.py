@@ -11,6 +11,7 @@ from config import settings
 from core.notification.model.Notification import NotificationType
 from core.notification.service.notification_service import NotificationService
 from core.user.model.User import User
+from core.user.notification_preferences import allows_in_app_notifications, allows_sms_notifications
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,17 @@ class EventNotificationService:
         *,
         send_sms: bool = False,
     ) -> None:
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if user and not allows_in_app_notifications(user):
+            logger.debug(
+                "[EVENT_NOTIFICATION] Skipping in-app notify for user %s (%s): disabled",
+                user_id,
+                data.get("event"),
+            )
+            return
+        if send_sms and user and not allows_sms_notifications(user):
+            send_sms = False
+
         try:
             self._notifications.create_notification(
                 user_id=user_id,

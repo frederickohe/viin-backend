@@ -1,3 +1,4 @@
+import logging
 import os
 
 import httpx
@@ -14,15 +15,25 @@ from core.user.model.User import User
 from core.paystack.model.transaction import Transaction  # You'll need to create this model
 from utilities.uniqueidgenerator import UniqueIdGenerator
 
+logger = logging.getLogger(__name__)
+
 class PaystackService:
     def __init__(self, db: Session):
         self.db = db
-        self.secret_key = os.getenv("PAYSTACK_SECRET_KEY")    
+        self.secret_key = (settings.PAYSTACK_SECRET_KEY or os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
+        self.currency = (os.getenv("PAYSTACK_CURRENCY", "GHS") or "GHS").strip().upper()
         self.base_url = "https://api.paystack.co"
         self.headers = {
             "Authorization": f"Bearer {self.secret_key}",
             "Content-Type": "application/json"
         }
+
+    def _ensure_configured(self) -> None:
+        if not self.secret_key:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="PAYSTACK_SECRET_KEY is not configured on the server.",
+            )
     
     def generate_reference(self) -> str:
         """Generate a unique transaction reference"""
@@ -41,6 +52,7 @@ class PaystackService:
         payload = {
             "email": request.email,
             "amount": request.amount,
+            "currency": self.currency,
             "reference": reference,
             "metadata": {
                 "user_id": user_id,
@@ -91,6 +103,7 @@ class PaystackService:
         request: PaystackInitializeRequest,
     ) -> PaystackInitializeResponse:
         """Initialize Paystack checkout from synchronous NLU handlers."""
+        self._ensure_configured()
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(
@@ -117,13 +130,28 @@ class PaystackService:
                 result = response.json()
 
             if result["status"]:
-                return self._persist_initialized_transaction(
-                    user_id=user_id,
-                    request=request,
-                    reference=reference,
-                    payload=payload,
-                    result_data=result["data"],
-                )
+                try:
+                    return self._persist_initialized_transaction(
+                        user_id=user_id,
+                        request=request,
+                        reference=reference,
+                        payload=payload,
+                        result_data=result["data"],
+                    )
+                except Exception as exc:
+                    logger.exception(
+                        "Paystack initialized but DB persist failed ref=%s: %s",
+                        reference,
+                        exc,
+                    )
+                    data = result["data"]
+                    return PaystackInitializeResponse(
+                        status=True,
+                        message="Transaction initialized successfully",
+                        authorization_url=data["authorization_url"],
+                        access_code=data["access_code"],
+                        reference=reference,
+                    )
 
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -149,6 +177,7 @@ class PaystackService:
         Initialize a Paystack transaction
         This is called from your backend to get a Paystack checkout URL.
         """
+        self._ensure_configured()
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(
@@ -176,13 +205,28 @@ class PaystackService:
                 result = response.json()
                 
                 if result["status"]:
-                    return self._persist_initialized_transaction(
-                        user_id=user_id,
-                        request=request,
-                        reference=reference,
-                        payload=payload,
-                        result_data=result["data"],
-                    )
+                    try:
+                        return self._persist_initialized_transaction(
+                            user_id=user_id,
+                            request=request,
+                            reference=reference,
+                            payload=payload,
+                            result_data=result["data"],
+                        )
+                    except Exception as exc:
+                        logger.exception(
+                            "Paystack initialized but DB persist failed ref=%s: %s",
+                            reference,
+                            exc,
+                        )
+                        data = result["data"]
+                        return PaystackInitializeResponse(
+                            status=True,
+                            message="Transaction initialized successfully",
+                            authorization_url=data["authorization_url"],
+                            access_code=data["access_code"],
+                            reference=reference,
+                        )
 
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
