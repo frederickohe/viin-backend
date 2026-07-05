@@ -16,6 +16,7 @@ from sqlalchemy import or_
 from fastapi import HTTPException
 from core.auth.service.authservice import AuthService
 from core.nlu.config import INTENT_CATEGORIES
+from core.nlu.emitters.response import ResponseFormatter
 from core.nlu.service.intentprocessor import IntentProcessor
 from core.nlu.service.intents import IntentDetector
 from core.nlu.service.slot_manager import SlotManager
