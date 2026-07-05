@@ -7,8 +7,15 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from core.nlu.nlu import AutobusNLUSystem
+from core.nlu.service.account_access import (
+    find_registered_user,
+    friendly_account_required_message,
+    parse_link_phone_command,
+)
+from core.user.service.user_service import UserService
 from core.webhooks.service.telegram_service import TelegramService
 from utilities.dbconfig import get_db
+from utilities.phone_utils import normalize_ghana_phone_number
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +29,10 @@ def _telegram_user_id(chat_id: int | str) -> str:
 _TELEGRAM_COMMAND_MESSAGES = {
     "/start": (
         "Hi! I'm Viin — your personal task assistant.\n\n"
-        "Tap the menu button (☰) next to the message box to see commands, or try:\n"
+        "First time here? Create your free account on the Viin website, then link your phone by sending:\n"
+        "link 0201234567\n\n"
+        "Tap the menu button (☰) to see commands, or try:\n"
         "• /briefing — today's tasks\n"
-        "• /yesterday — what was due yesterday\n"
         "• /addtask — add a task\n"
         "• /help — full list of capabilities"
     ),
@@ -34,9 +42,10 @@ _TELEGRAM_COMMAND_MESSAGES = {
         "• Add tasks with or without a due date\n"
         "• Daily or weekly briefings\n"
         "• Check what was due yesterday\n\n"
+        "🔗 Link your account\n"
+        "• Send: link 0201234567 (use the phone on your Viin account)\n\n"
         "💬 General help\n"
-        "• Answer questions about your pending to-dos\n"
-        "• Conversational assistance\n\n"
+        "• Answer questions about your pending to-dos\n\n"
         "Try: \"remind me to call John tomorrow at 3pm\" or \"what do I need to do today?\""
     ),
     "/briefing": "What do I need to do today? Give me my daily briefing.",
@@ -91,6 +100,15 @@ async def telegram_webhook(
         logger.warning("Telegram message missing chat.id")
         return {"ok": True}
 
+    contact = message.get("contact")
+    if contact and contact.get("phone_number"):
+        return await _handle_phone_link(
+            chat_id=chat_id,
+            phone=contact.get("phone_number"),
+            telegram_service=telegram_service,
+            db=db,
+        )
+
     text = (message.get("text") or "").strip()
     if not text:
         telegram_service.send_message(
@@ -111,6 +129,32 @@ async def telegram_webhook(
     )
 
 
+async def _handle_phone_link(
+    *,
+    chat_id: int | str,
+    phone: str,
+    telegram_service: TelegramService,
+    db: Session,
+) -> dict:
+    nlu_user_id = _telegram_user_id(chat_id)
+    normalized = normalize_ghana_phone_number(phone)
+    user = find_registered_user(db, nlu_user_id, linked_phone=normalized)
+    if not user:
+        telegram_service.send_message(chat_id, friendly_account_required_message("telegram"))
+        return {"ok": True}
+
+    nlu_system = AutobusNLUSystem(db_session=db)
+    state = nlu_system.conversation_manager.get_conversation_state(nlu_user_id)
+    state.viin_linked_phone = user.phone
+    nlu_system.conversation_manager._save_conversation_state(state)
+    first_name = (user.fullname or "").split()[0] if user.fullname else "there"
+    telegram_service.send_message(
+        chat_id,
+        f"You're all set, {first_name}! I've linked this chat to {user.phone}. What can I help you with?",
+    )
+    return {"ok": True}
+
+
 async def _handle_text_message(
     *,
     chat_id: int | str,
@@ -120,8 +164,23 @@ async def _handle_text_message(
 ) -> dict:
     try:
         nlu_user_id = _telegram_user_id(chat_id)
-        nlu_system = AutobusNLUSystem(db_session=db)
-        response_message = nlu_system.process_message(nlu_user_id, text)
+
+        if parse_link_phone_command(text):
+            nlu_system = AutobusNLUSystem(db_session=db)
+            response_message = nlu_system.process_message(nlu_user_id, text)
+        else:
+            state_user = AutobusNLUSystem(db_session=db)
+            convo = state_user.conversation_manager.get_conversation_state(nlu_user_id)
+            linked_phone = getattr(convo, "viin_linked_phone", None)
+            registered = find_registered_user(
+                db, nlu_user_id, linked_phone=linked_phone
+            )
+            if not registered and text.split()[0].split("@")[0].lower() not in ("/start", "/help"):
+                response_message = friendly_account_required_message("telegram")
+            else:
+                nlu_system = AutobusNLUSystem(db_session=db)
+                response_message = nlu_system.process_message(nlu_user_id, text)
+
         logger.info("Generated Telegram response for %s", nlu_user_id)
 
         if not telegram_service.send_message(chat_id, response_message):
@@ -137,7 +196,7 @@ async def _handle_text_message(
         logger.error("Error handling Telegram message: %s", exc, exc_info=True)
         telegram_service.send_message(
             chat_id,
-            "An error occurred while processing your message. Please try again.",
+            "Something went wrong on my end. Please try again in a moment.",
         )
         return {"ok": True}
 

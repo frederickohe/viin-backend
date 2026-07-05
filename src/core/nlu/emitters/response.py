@@ -1,5 +1,7 @@
 from typing import Dict, Any
 
+from core.nlu.service.account_access import friendly_account_required_message
+
 class ResponseFormatter:
     @staticmethod
     def format_response(intent: str, message_type: str, **kwargs) -> str:
@@ -24,10 +26,8 @@ class ResponseFormatter:
             return "I'm not quite sure what you're asking. Could you please rephrase or provide more details? I can help you with: todos and reminders, email, media generation, Paystack payments, daily or weekly briefings, and profile updates."
         
         elif message_type == "account_required":
-            return (
-                "You need a Viin account before I can do that. "
-                "Please sign up and verify your account, then sign in and try again."
-            )
+            channel = kwargs.get("channel", "web")
+            return friendly_account_required_message(channel)
 
         elif message_type == "error":
             return kwargs.get("message") or "Something went wrong. Please try again."

@@ -23,7 +23,12 @@ from core.nlu.service.conversation_manager import ConversationManager
 from core.nlu.service.intent_handler_result import IntentHandlerResult
 from core.nlu.service.security import SecurityManager
 from core.nlu.service.date_selection_manager import DateSelectionManager, DateOption
-from core.nlu.emitters.response import ResponseFormatter
+from core.nlu.service.account_access import (
+    channel_type,
+    find_registered_user,
+    friendly_account_required_message,
+    parse_link_phone_command,
+)
 from core.user.service.user_service import UserService
 from utilities.dbconfig import SessionLocal
 from core.auth.dto.request.user_create import UserCreateRequest
@@ -118,6 +123,28 @@ class AutobusNLUSystem:
         # Get conversation state
         state = self.conversation_manager.get_conversation_state(user_id)
 
+        link_phone = parse_link_phone_command(user_message or "")
+        if link_phone and channel_type(user_id) == "telegram":
+            self.conversation_manager.update_conversation_history(user_id, "user", user_message)
+            db = self.db_session or SessionLocal()
+            should_close = self.db_session is None
+            try:
+                linked_user = find_registered_user(db, user_id, linked_phone=link_phone)
+                if linked_user:
+                    state.viin_linked_phone = linked_user.phone
+                    self.conversation_manager._save_conversation_state(state)
+                    response = (
+                        f"You're all set, {linked_user.fullname.split()[0] if linked_user.fullname else 'there'}! "
+                        f"I've linked this chat to {linked_user.phone}. What can I help you with?"
+                    )
+                else:
+                    response = friendly_account_required_message("telegram")
+            finally:
+                if should_close:
+                    db.close()
+            self.conversation_manager.update_conversation_history(user_id, "assistant", response)
+            return response
+
         logger.info("Received message from %s: %s", user_id, (user_message or "")[:200])
 
         if state.conversation_lifecycle == "awaiting_followup_help":
@@ -174,8 +201,10 @@ class AutobusNLUSystem:
         logger.info("Detected intent=%s missing=%s", intent, missing_slots)
 
         user_data = self._get_user_data(user_id)
-        if self._requires_registered_account(intent) and not self._has_registered_account(user_data):
-            response = self.response_formatter.format_response("", "account_required")
+        if self._requires_registered_account(intent) and not self._has_registered_account(user_id, user_data):
+            response = self.response_formatter.format_response(
+                "", "account_required", channel=channel_type(user_id)
+            )
             self.conversation_manager.update_conversation_history(user_id, "assistant", response)
             return response
 
@@ -353,9 +382,11 @@ class AutobusNLUSystem:
             )
             return IntentHandlerResult(msg, None)
         elif intent in payment_intents:
-            if not self._has_registered_account(user_data):
+            if not self._has_registered_account(user_id, user_data):
                 return IntentHandlerResult(
-                    self.response_formatter.format_response("", "account_required"),
+                    self.response_formatter.format_response(
+                        "", "account_required", channel=channel_type(user_id)
+                    ),
                     None,
                 )
             msg = self.intent_processor.process_payment_intent(
@@ -450,9 +481,23 @@ class AutobusNLUSystem:
             protected.update(INTENT_CATEGORIES.get(key, []))
         return intent in protected
 
-    @staticmethod
-    def _has_registered_account(user_data: Optional[Dict[str, Any]]) -> bool:
-        return bool((user_data or {}).get("db_user_id"))
+    def _has_registered_account(
+        self, user_id: str, user_data: Optional[Dict[str, Any]]
+    ) -> bool:
+        if (user_data or {}).get("db_user_id"):
+            return True
+        db = self.db_session or SessionLocal()
+        should_close = self.db_session is None
+        try:
+            state = self.conversation_manager.get_conversation_state(user_id)
+            linked_phone = getattr(state, "viin_linked_phone", None)
+            user = find_registered_user(
+                db, user_id, linked_phone=linked_phone
+            )
+            return user is not None
+        finally:
+            if should_close:
+                db.close()
 
     def _resolve_internal_user_id(
         self, user_id: str, user_data: Optional[Dict[str, Any]]
@@ -464,23 +509,14 @@ class AutobusNLUSystem:
         db = self.db_session or SessionLocal()
         should_close = self.db_session is None
         try:
-            merchant_id, channel_user_id = self._parse_merchant_scoped_user_id(user_id)
-            lookup_id = channel_user_id if merchant_id else user_id
-            user = UserService(db).find_user_by_phone(lookup_id)
+            state = self.conversation_manager.get_conversation_state(user_id)
+            linked_phone = getattr(state, "viin_linked_phone", None)
+            user = find_registered_user(
+                db, user_id, linked_phone=linked_phone
+            )
             if user:
                 return str(user.id)
-            raise HTTPException(
-                status_code=403,
-                detail="Please create a Viin account and sign in before using this feature.",
-            )
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.warning("Could not fetch internal user ID for %s: %s", user_id, e)
-            raise HTTPException(
-                status_code=403,
-                detail="Please create a Viin account and sign in before using this feature.",
-            ) from e
+            raise ValueError("registered_user_not_found")
         finally:
             if should_close:
                 db.close()
@@ -751,6 +787,13 @@ class AutobusNLUSystem:
                 ),
                 None,
             )
+        except ValueError:
+            return IntentHandlerResult(
+                self.response_formatter.format_response(
+                    "", "account_required", channel=channel_type(user_id)
+                ),
+                None,
+            )
         except Exception as e:
             logger.error("Add task failed for user %s: %s", user_id, e, exc_info=True)
             return IntentHandlerResult(
@@ -807,6 +850,11 @@ class AutobusNLUSystem:
                 }
 
             user = user_service.find_user_by_phone(channel_user_id)
+            if not user and channel_type(user_id) == "telegram":
+                state = self.conversation_manager.get_conversation_state(user_id)
+                linked_phone = getattr(state, "viin_linked_phone", None)
+                if linked_phone:
+                    user = user_service.find_user_by_phone(linked_phone)
 
             if user:
                 return {

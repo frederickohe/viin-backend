@@ -40,14 +40,20 @@ async def process_message(
         if not current_user.enabled:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your account is not verified yet. Please complete signup and OTP verification.",
+                detail=(
+                    "Your account isn't verified yet. "
+                    "Please finish signup and enter the OTP we sent to your phone."
+                ),
             )
 
         account_phone = (current_user.phone or "").strip()
         if not account_phone:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Your account needs a phone number before you can use the assistant.",
+                detail=(
+                    "Add a phone number to your profile first — "
+                    "then I can help you with tasks, reminders, and payments."
+                ),
             )
 
         if request.phone:
@@ -56,7 +62,7 @@ async def process_message(
             if requested and actual and requested != actual:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Phone number does not match your signed-in account.",
+                    detail="That phone number doesn't match the account you're signed in with.",
                 )
 
         nlu_system = AutobusNLUSystem(db_session=db)

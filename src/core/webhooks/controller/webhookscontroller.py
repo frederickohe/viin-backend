@@ -349,8 +349,9 @@ async def handle_simple_chat(
         if not user:
             return SimpleChatResponse(
                 message=(
-                    "Please create a Viin account and sign in before using the assistant. "
-                    "Visit the Viin website to sign up."
+                    "Hi! I don't have a Viin account for this number yet. "
+                    "Create your free account on the Viin website, verify your phone, "
+                    "then message me again and I'll be ready to help."
                 )
             )
 
@@ -509,7 +510,7 @@ def handle_text_message(message: dict, phone: str, phone_id: str, db: Session):
         # ):
         
         # Initialize NLU system and subscription service
-        nlu_system = AutobusNLUSystem()
+        nlu_system = AutobusNLUSystem(db_session=db)
 
         # Process the message
         response_message = nlu_system.process_message(

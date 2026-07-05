@@ -30,6 +30,7 @@ class ConversationState:
     intervention_trigger: Optional[str] = None
     intervention_reason: Optional[str] = None
     intervention_created_at: Optional[str] = None
+    viin_linked_phone: Optional[str] = None
 
     def __post_init__(self):
         if not self.conversation_id:
@@ -69,6 +70,7 @@ class ConversationState:
             "intervention_trigger": self.intervention_trigger,
             "intervention_reason": self.intervention_reason,
             "intervention_created_at": self.intervention_created_at,
+            "viin_linked_phone": self.viin_linked_phone,
         }
 
     @classmethod
