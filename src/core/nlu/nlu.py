@@ -405,6 +405,8 @@ class AutobusNLUSystem:
         # Validate and merge slots
         validated_slots = self.slot_manager.validate_slots(intent, extracted_slots)
 
+        if intent in ("delete_task", "update_task", "manage_tasks"):
+            state.collected_slots = {}
         state.collected_slots.update(validated_slots)
         state.current_intent = intent
 
@@ -425,7 +427,11 @@ class AutobusNLUSystem:
             user_msg_lower = user_message.lower().strip()
             cancellation_keywords = ["cancel", "stop", "abort", "never mind", "nevermind", "quit"]
 
-            if any(keyword in user_msg_lower for keyword in cancellation_keywords):
+            is_task_delete = self._try_parse_delete_task_command(user_message) is not None
+            if not is_task_delete and any(
+                keyword == user_msg_lower or user_msg_lower.startswith(keyword + " ")
+                for keyword in cancellation_keywords
+            ):
                 logger.info(f"[CANCELLATION] User {user_id} cancelled {state.current_intent} during slot collection")
                 response = "Okay, I've cancelled that. How else can I help you?"
 
@@ -461,6 +467,9 @@ class AutobusNLUSystem:
         # Clear collected slots if action was executed
         if not current_missing:
             self.conversation_manager.clear_collected_slots(user_id)
+            state = self.conversation_manager.get_conversation_state(user_id)
+            state.current_intent = ""
+            self.conversation_manager._save_conversation_state(state)
         
         return result
     

@@ -82,6 +82,8 @@ class SlotManager:
                 elif "account_number" in slot:
                     # Account numbers should not be validated - they can be in any format
                     validated_slots[slot] = str(value).strip()
+                elif slot == "task_number":
+                    validated_slots[slot] = str(value).strip()
                 elif "email" not in slot and ("phone" in slot or "recipient" in slot or "number" in slot):
                     validated_slots[slot] = self._validate_phone_number(value)
                 else:
@@ -221,7 +223,7 @@ class SlotManager:
             "repeat_frequency": "How often should it repeat? (daily, weekly, or monthly)",
             "repeat_time": "What time should it repeat each cycle? (e.g. 8am, 5:30pm)",
             "task_number": (
-                "Which task ID should I change? Use the ID from manage tasks, e.g. T1 or 1."
+                "Which task ID? Use the ID from manage tasks, e.g. T1 or 1."
             ),
         }
 
@@ -289,7 +291,12 @@ class SlotManager:
         }
 
         if len(missing_slots) == 1:
-            return self._slot_description(intent, missing_slots[0], bill_providers)
+            slot = missing_slots[0]
+            if intent == "delete_task" and slot == "task_number":
+                return 'Which task should I remove? Say e.g. "delete T1" or "delete 2".'
+            if intent == "update_task" and slot == "task_number":
+                return 'Which task should I update? Say e.g. "update T1 to buy eggs".'
+            return self._slot_description(intent, slot, bill_providers)
 
         lines = [f"• {format_slot_label(slot)}" for slot in missing_slots]
         return "I still need the following:\n" + "\n".join(lines)

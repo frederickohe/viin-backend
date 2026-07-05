@@ -14,7 +14,6 @@ import logging
 from core.nlu.service.datapipe.dataengine import EnhancedUserRAGManager
 
 from core.agent.tools.agent_config.user_agent_config_service import AgentConfigService
-from core.nlu.service.account_access import signup_url
 
 logger = logging.getLogger(__name__)
 
@@ -126,24 +125,46 @@ class IntentProcessor:
     ) -> str:
         """Initialize a Paystack checkout for the user."""
         from core.paystack.dto.request.paystack_request import PaystackInitializeRequest
+        from core.paystack.service.paystack_customer import resolve_paystack_customer_email
         from core.paystack.service.paystack_service import PaystackService
+        from core.user.model.User import User
 
-        email = (user_data or {}).get("email", "").strip()
         user_id = (user_data or {}).get("db_user_id") or (user_data or {}).get("user_id")
-        if not email:
-            return (
-                "I need an email address on your account to start a Paystack payment. "
-                f"Add one in your profile at {signup_url()} and try again."
-            )
         if not user_id:
             return RESPONSE_TEMPLATES["payment"]["error"]
+
+        db = self.db_session
+        should_close = False
+        if db is None:
+            from utilities.dbconfig import SessionLocal
+            db = SessionLocal()
+            should_close = True
+
+        from core.user.service.user_service import UserService
+
+        user = db.query(User).filter(User.id == str(user_id)).first()
+        if not user:
+            phone = str(
+                (user_data or {}).get("customer_phone")
+                or (user_data or {}).get("user_id")
+                or ""
+            ).strip()
+            if phone:
+                user = UserService(db).find_user_by_phone(phone)
+                if user:
+                    user_id = user.id
+        email = resolve_paystack_customer_email(user=user, user_data=user_data)
 
         try:
             amount_ghs = float(slots.get("amount", 0))
         except (TypeError, ValueError):
+            if should_close:
+                db.close()
             return "Please provide a valid payment amount in GHS."
 
         if amount_ghs <= 0:
+            if should_close:
+                db.close()
             return "Please provide a payment amount greater than zero."
 
         amount_pesewas = int(round(amount_ghs * 100))
@@ -178,13 +199,6 @@ class IntentProcessor:
             metadata["payment_method"] = payment_method
         callback_url = (settings.PAYSTACK_BILLING_CALLBACK_URL or "").strip() or None
         channels = _resolve_paystack_channels(payment_method)
-
-        db = self.db_session
-        should_close = False
-        if db is None:
-            from utilities.dbconfig import SessionLocal
-            db = SessionLocal()
-            should_close = True
 
         paystack_service = PaystackService(db)
         request = PaystackInitializeRequest(
