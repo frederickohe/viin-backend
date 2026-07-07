@@ -77,6 +77,11 @@ class ReminderDeliveryService:
         return ["chat", "sms"]
 
     def effective_channels(self, reminder: Reminder, user: Optional[User]) -> List[str]:
+        delivery = reminder.delivery or {}
+        explicit = delivery.get("channels")
+        if isinstance(explicit, list) and explicit:
+            # Channels stored on the reminder reflect how the user asked to be notified.
+            return [str(channel).lower() for channel in explicit]
         return filter_channels_by_user_prefs(self.resolve_channels(reminder, user), user)
 
     @staticmethod

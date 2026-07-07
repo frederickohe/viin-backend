@@ -85,7 +85,7 @@ class User(Base):
     
     # Notification Preferences
     profile_sharing: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
-    in_app_notification: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
+    in_app_notification: Mapped[Optional[bool]] = mapped_column(Boolean, default=None)
     sms_notification: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
 
     # NEW: Agents Configuration JSONB Field
