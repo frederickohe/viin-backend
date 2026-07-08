@@ -27,6 +27,7 @@ from core.media.controller.media_controller import media_routes
 from core.conversationmanager.controller.conversation_controller import conversation_routes
 from core.memory.controller.memory_controller import memory_routes
 from core.integrations.controller.google_calendar_controller import google_calendar_routes
+from core.trading.controller.trading_controller import trading_routes
 
 from utilities.dbconfig import Base, engine
 from config import settings
@@ -180,6 +181,12 @@ app.include_router(
     google_calendar_routes,
     prefix="/api/v1/integrations/google-calendar",
     tags=["Google Calendar Integration"],
+)
+
+app.include_router(
+    trading_routes,
+    prefix="/api/v1/trading",
+    tags=["Trading Bot"],
 )
 
 # JWT Authentication Settings
