@@ -48,3 +48,18 @@ class TradingChatResponse(BaseModel):
 class TradingBasicResponse(BaseModel):
     message: str
 
+
+class MarketBar(BaseModel):
+    t: str = Field(..., description="ISO timestamp for the bar.")
+    o: float
+    h: float
+    l: float
+    c: float
+    v: float
+
+
+class MarketBarsResponse(BaseModel):
+    symbol: str
+    timeframe: str
+    bars: List[MarketBar]
+

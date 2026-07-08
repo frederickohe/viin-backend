@@ -80,7 +80,19 @@ def _trade_once(user_id: str) -> None:
     if not equities:
         return
 
+    max_position_qty = float(os.environ.get("TRADING_BOT_MAX_POSITION_QTY", "10") or 10)
+    cooldown_seconds = float(os.environ.get("TRADING_BOT_COOLDOWN_SECONDS", "30") or 30)
+
+    now = time.time()
+    # Per-user in-memory cooldown tracker (symbol -> last action epoch seconds).
+    # We keep this volatile by design; it’s a safety throttle, not durable state.
+    last_actions = equities.get("__meta__", {}).get("last_actions", {})
+    if not isinstance(last_actions, dict):
+        last_actions = {}
+
     for symbol, data in list(equities.items()):
+        if symbol == "__meta__":
+            continue
         symbol = _normalize_symbol(symbol)
         data = data or {}
         if str(data.get("status", "Off")) != "On":
@@ -89,18 +101,36 @@ def _trade_once(user_id: str) -> None:
         drawdown = float(data.get("drawdown", 0.0) or 0.0)
         existing_levels = data.get("levels", {}) or {}
 
+        # Cooldown: prevent rapid-fire orders for the same symbol.
+        last_ts = float(last_actions.get(symbol, 0) or 0)
+        if last_ts and (now - last_ts) < cooldown_seconds:
+            continue
+
+        # Position cap: do not exceed configured max exposure.
+        try:
+            current_qty = alpaca_client.get_position_qty(symbol) if alpaca_client.alpaca_is_configured() else 0.0
+        except Exception:
+            current_qty = 0.0
+        if current_qty >= max_position_qty:
+            continue
+
         # Ensure we have an entry price (if no filled orders yet, place initial market buy).
         entry_price = _get_max_entry_price(symbol)
         if entry_price <= 0:
             try:
-                alpaca_client.submit_market_buy(symbol=symbol, qty=1)
+                # Only place an initial buy when we have no position yet.
+                if current_qty <= 0:
+                    alpaca_client.submit_market_buy(symbol=symbol, qty=1)
+                    last_actions[symbol] = time.time()
                 time.sleep(1.5)
                 entry_price = _get_max_entry_price(symbol)
             except Exception as e:
                 logger.warning(f"[TRADING] Failed to place initial order for {symbol}: {e}")
                 continue
 
-        levels_count = len([k for k in existing_levels.keys() if str(k).lstrip("-").isdigit()]) or 1
+        levels_count = int(data.get("levels_count") or 0) or len(
+            [k for k in existing_levels.keys() if str(k).lstrip("-").isdigit()]
+        ) or 1
         level_prices = _compute_level_prices(entry_price, levels_count, drawdown)
 
         # Ensure forward levels exist for any missing keys.
@@ -116,9 +146,11 @@ def _trade_once(user_id: str) -> None:
         for level, price in level_prices.items():
             if str(level) in data["levels"]:
                 _place_level_order(equities, symbol, price, level)
+                last_actions[symbol] = time.time()
 
         equities[symbol] = data
 
+    equities["__meta__"] = {"last_actions": last_actions}
     save_equities(user_id, equities)
 
 

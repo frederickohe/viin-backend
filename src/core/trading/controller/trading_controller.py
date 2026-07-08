@@ -3,12 +3,14 @@ from __future__ import annotations
 import jwt
 from another_fastapi_jwt_auth import AuthJWT
 from another_fastapi_jwt_auth.exceptions import MissingTokenError
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from core.auth.controller.authcontroller import get_db
 from core.llmclient.llmclient import LLMClient
 from core.trading.dto.trading_dtos import (
+    MarketBarsResponse,
     TradingBasicResponse,
     TradingChatRequest,
     TradingChatResponse,
@@ -103,6 +105,7 @@ def add_equity(
         "entry_price": float(entry_price),
         "levels": level_prices,
         "drawdown": float(drawdown),
+        "levels_count": int(payload.levels),
         "status": "Off",
     }
     save_equities(str(user.id), raw)
@@ -192,4 +195,66 @@ def trading_chat(
 
     response = LLMClient().chat_completion(system_prompt=system_prompt, user_message=payload.message, max_tokens=600)
     return TradingChatResponse(response=response or "", success=True)
+
+
+@trading_routes.get("/market/bars/{symbol}", response_model=MarketBarsResponse)
+def market_bars(
+    symbol: str,
+    timeframe: str = Query("1Day", description="Alpaca timeframe string (e.g. 1Min, 5Min, 15Min, 1Hour, 1Day)."),
+    limit: int = Query(200, ge=1, le=1000),
+    start: str | None = Query(None, description="ISO start timestamp, optional."),
+    end: str | None = Query(None, description="ISO end timestamp, optional."),
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    _ = _current_user(authjwt, db)
+    if not alpaca_client.alpaca_is_configured():
+        raise HTTPException(status_code=503, detail="Alpaca is not configured (set ALPACA_API_KEY/SECRET).")
+
+    sym = symbol.strip().upper()
+    bars = alpaca_client.get_bars(sym, timeframe=timeframe, limit=limit, start=start, end=end)
+    return MarketBarsResponse(symbol=sym, timeframe=timeframe, bars=bars)
+
+
+@trading_routes.get("/market/bars/{symbol}/export")
+def export_market_bars(
+    symbol: str,
+    format: str = Query("csv", pattern="^(csv|json)$"),
+    timeframe: str = Query("1Day"),
+    limit: int = Query(200, ge=1, le=5000),
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    _ = _current_user(authjwt, db)
+    if not alpaca_client.alpaca_is_configured():
+        raise HTTPException(status_code=503, detail="Alpaca is not configured (set ALPACA_API_KEY/SECRET).")
+
+    sym = symbol.strip().upper()
+    bars = alpaca_client.get_bars(sym, timeframe=timeframe, limit=limit, start=start, end=end)
+
+    if format == "json":
+        import json as _json
+
+        payload = _json.dumps(
+            {"symbol": sym, "timeframe": timeframe, "bars": bars},
+            indent=2,
+        ).encode("utf-8")
+        return Response(
+            content=payload,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{sym}.{timeframe}.bars.json"'},
+        )
+
+    # CSV
+    lines = ["t,o,h,l,c,v"]
+    for b in bars:
+        lines.append(f'{b.get("t","")},{b.get("o","")},{b.get("h","")},{b.get("l","")},{b.get("c","")},{b.get("v","")}')
+    csv_bytes = ("\n".join(lines) + "\n").encode("utf-8")
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{sym}.{timeframe}.bars.csv"'},
+    )
 
