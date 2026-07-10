@@ -14,7 +14,8 @@ from core.user.model.User import User
 from core.user.notification_preferences import filter_channels_by_user_prefs
 from core.webhooks.service.telegram_service import TelegramService
 from core.webhooks.service.whatsapp_service import WhatsAppService
-from core.wirepick.service.wirepickservice import WirepickSMSService, WirepickSMSException
+from core.moolre.service.moolreservice import MoolreException
+from core.sms.service.sms_factory import get_sms_service
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -27,11 +28,11 @@ _FREQ_STEP = {
 
 
 class ReminderDeliveryService:
-    """Deliver due reminders to chat, SMS (Wirepick), WhatsApp, or Telegram."""
+    """Deliver due reminders to chat, SMS (Moolre), WhatsApp, or Telegram."""
 
     def __init__(self) -> None:
         self.conversation_manager = ConversationManager()
-        self.sms_service = WirepickSMSService()
+        self.sms_service = get_sms_service()
         self.sms_enabled = getattr(settings, "SMS_NOTIFICATION_ENABLED", True)
 
     @staticmethod
@@ -129,7 +130,7 @@ class ReminderDeliveryService:
             if result.get("success"):
                 return True, None
             return False, result.get("error") or "SMS send failed"
-        except WirepickSMSException as exc:
+        except MoolreException as exc:
             return False, str(exc)
 
     def deliver_whatsapp(self, *, user: User, message: str) -> Tuple[bool, Optional[str]]:

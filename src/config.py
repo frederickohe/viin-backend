@@ -46,14 +46,11 @@ class Settings(BaseSettings):
     BASE_FRONTEND_URL: str = os.environ.get('BASE_FRONTEND_URL', 'http://localhost:3000')
     COMPANY_QUEUE: str = os.environ.get('COMPANY_QUEUE', '')
 
-    # Wirepick SMS Configuration
-    # Note: some env files include accidental surrounding quotes; we normalize via .strip().
-    WIREPICK_API_URL: str = os.environ.get("WIREPICK_API_URL", "https://api.wirepick.com/httpsms").strip().strip('"').strip("'")
-    WIREPICK_CLIENT_ID: str = os.environ.get("WIREPICK_CLIENT_ID", "").strip()
-    WIREPICK_PASSWORD: str = os.environ.get("WIREPICK_PASSWORD", "").strip()
-    WIREPICK_PUBLIC_KEY: str = os.environ.get("WIREPICK_PUBLIC_KEY", "").strip()
-    WIREPICK_SENDER_ID: str = os.environ.get("WIREPICK_SENDER_ID", "Viin").strip()
-    USE_WIREPICK_API_KEY: bool = os.environ.get("USE_WIREPICK_API_KEY", "false").lower() == "true"
+    # Moolre SMS Configuration
+    MOOLRE_API_URL: str = os.environ.get("MOOLRE_API_URL", "https://api.moolre.com").strip().strip('"').strip("'")
+    MOOLRE_API_USER: str = os.environ.get("MOOLRE_API_USER", "").strip()
+    MOOLRE_VAS_KEY: str = os.environ.get("MOOLRE_VAS_KEY", "").strip()
+    MOOLRE_SENDER_ID: str = os.environ.get("MOOLRE_SENDER_ID", "Viin").strip()
 
     # Email (SMTP) configuration (used for OTP email + agent email tool)
     ZEPTOMAIL_SMTP_HOST: str = os.environ.get("ZEPTOMAIL_SMTP_HOST", "smtp.zeptomail.com").strip()

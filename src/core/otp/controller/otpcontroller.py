@@ -63,9 +63,9 @@ def verify_otp(request: OTPVerifyRequest, db: Session = Depends(get_db)):
 @otp_routes.post("/test-sms")
 def test_sms(request: OTPTest, db: Session = Depends(get_db)):
     """Test endpoint to debug SMS sending"""
-    from core.wirepick.service.wirepickservice import WirepickSMSService
+    from core.sms.service.sms_factory import get_sms_service
     
-    sms_service = WirepickSMSService()
+    sms_service = get_sms_service()
     result = sms_service.send_sms(request.phone, "Test message from debug endpoint")
     
     return {

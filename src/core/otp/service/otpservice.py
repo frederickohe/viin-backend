@@ -11,7 +11,8 @@ from email.message import EmailMessage
 from sqlalchemy.orm import Session
 from core.otp.model.otp import OTP
 from core.otp.dto.response.otp_send_response import OTPSendResponse
-from core.wirepick.service.wirepickservice import WirepickSMSService, WirepickSMSException
+from core.moolre.service.moolreservice import MoolreException
+from core.sms.service.sms_factory import get_sms_service
 from config import settings
 import logging
 
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 class OTPService:
     def __init__(self, db: Session):
         self.db = db
-        self.sms_service = WirepickSMSService()
+        self.sms_service = get_sms_service()
 
     def generate_otp(self) -> str:
         """Generate a 5-digit OTP"""
@@ -32,7 +33,7 @@ class OTPService:
         return f"Your verification code is: {otp_code}. Valid for {settings.OTP_EXPIRE_SECONDS} seconds."
 
     def send_otp_phone(self, phone: str) -> OTPSendResponse:
-        """Send OTP to phone number using Wirepick SMS"""
+        """Send OTP to phone number via Moolre SMS."""
         try:
             otp_code = self.generate_otp()
             expires_at = datetime.now(timezone.utc) + timedelta(seconds=settings.OTP_EXPIRE_SECONDS)
@@ -79,19 +80,19 @@ class OTPService:
                     self.db.commit()
                     
                     error_msg = sms_result.get('error', 'Unknown SMS error')
-                    logger.error(f"Failed to send OTP via Wirepick: {error_msg}")
+                    logger.error(f"Failed to send OTP via Moolre: {error_msg}")
                     
                     return OTPSendResponse(
                         success=False,
                         message=f"Failed to send OTP. SMS provider error."
                     )
                     
-            except WirepickSMSException as e:
+            except MoolreException as e:
                 # SMS service error, rollback OTP creation
                 self.db.delete(otp_record)
                 self.db.commit()
                 
-                logger.error(f"Wirepick SMS error for {phone}: {str(e)}")
+                logger.error(f"Moolre SMS error for {phone}: {str(e)}")
                 return OTPSendResponse(
                     success=False,
                     message="Failed to send OTP. Please try again later."

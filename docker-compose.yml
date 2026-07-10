@@ -97,11 +97,11 @@ services:
       EMAIL_MQ_QUEUE: ${EMAIL_MQ_QUEUE:-}
       COMPANY_QUEUE: ${COMPANY_QUEUE:-}
 
-      # Wirepick SMS Configuration
-      WIREPICK_API_URL: "https://api.wirepick.com/httpsms"
-      WIREPICK_PUBLIC_KEY: ${WIREPICK_PUBLIC_KEY:-8YyJoInAPwhngnjbD_5u5y2kC0CCvPnMk_F0cKLE3vc}
-      WIREPICK_SENDER_ID: ${WIREPICK_SENDER_ID:-AutoBus}
-      USE_WIREPICK_API_KEY: ${USE_WIREPICK_API_KEY:-true}
+      # Moolre SMS Configuration
+      MOOLRE_API_URL: ${MOOLRE_API_URL:-https://api.moolre.com}
+      MOOLRE_API_USER: ${MOOLRE_API_USER:-}
+      MOOLRE_VAS_KEY: ${MOOLRE_VAS_KEY:-}
+      MOOLRE_SENDER_ID: ${MOOLRE_SENDER_ID:-Viin}
       
       # Frontend and Other URLs
       BASE_FRONTEND_URL: ${BASE_FRONTEND_URL:-https://task.viin.app}

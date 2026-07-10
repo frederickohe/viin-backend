@@ -7,7 +7,8 @@ from fastapi import HTTPException, status
 from core.notification.model.Notification import Notification, NotificationStatus, NotificationType
 from core.user.model.User import User
 from core.user.notification_preferences import allows_in_app_notifications, allows_sms_notifications
-from core.wirepick.service.wirepickservice import WirepickSMSService, WirepickSMSException
+from core.moolre.service.moolreservice import MoolreException
+from core.sms.service.sms_factory import get_sms_service
 from config import settings
 
 # DTO Models
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 class NotificationService:
     def __init__(self, db: Session):
         self.db = db
-        self.sms_service = WirepickSMSService()
+        self.sms_service = get_sms_service()
         self.sms_enabled = getattr(settings, 'SMS_NOTIFICATION_ENABLED', True)
 
     def _format_sms_message(self, notification_type: NotificationType, data: dict) -> str:
@@ -116,7 +117,7 @@ class NotificationService:
             # Format SMS message
             message = self._format_sms_message(notification_type, data)
             
-            # Send via Wirepick
+            # Send via Moolre
             result = self.sms_service.send_sms(phone, message)
             
             # Update notification with SMS details
@@ -135,7 +136,7 @@ class NotificationService:
                 
                 self.db.commit()
                 
-        except WirepickSMSException as e:
+        except MoolreException as e:
             # Update notification with failure
             notification = self.db.query(Notification).filter(Notification.id == notification_id).first()
             if notification:
@@ -144,7 +145,7 @@ class NotificationService:
                 notification.status = NotificationStatus.FAILED
                 self.db.commit()
             
-            logger.error(f"Wirepick SMS error for notification {notification_id}: {str(e)}")
+            logger.error(f"Moolre SMS error for notification {notification_id}: {str(e)}")
             raise
 
     def send_bulk_sms_notifications(self, user_ids: List[str], message: str, 
