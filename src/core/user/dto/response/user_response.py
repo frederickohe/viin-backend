@@ -36,6 +36,9 @@ class UserResponse(BaseModel):
     profile_sharing: Optional[bool] = None
     in_app_notification: Optional[bool] = None
     sms_notification: Optional[bool] = None
+
+    # Product services (assistant, trading, …)
+    services: List[str] = ["assistant"]
     
     # Status and Timestamps
     status: str

@@ -88,6 +88,13 @@ class User(Base):
     in_app_notification: Mapped[Optional[bool]] = mapped_column(Boolean, default=None)
     sms_notification: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
 
+    # Product services enrolled at signup (e.g. assistant, trading)
+    services: Mapped[Optional[List[str]]] = mapped_column(
+        JSON,
+        default=lambda: ["assistant"],
+        server_default='["assistant"]',
+    )
+
     # NEW: Agents Configuration JSONB Field
     agents: Mapped[Optional[Dict[str, Any]]] = mapped_column(
         JSONB, 

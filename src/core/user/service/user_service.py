@@ -22,11 +22,45 @@ from core.user.dto.request.user_filter_request import UserFilterRequest
 from core.user.dto.response.message_response import MessageResponse
 from core.user.dto.response.user_response import UserResponse
 from core.user.dto.request.user_update_request import UserUpdateRequest
+from core.user.product_services import merge_services, normalize_services, services_from_user
 
 # Service Class
 class UserService:
     def __init__(self, db: Session):
         self.db = db
+
+    def _to_response(self, user: User) -> UserResponse:
+        return UserResponse(
+            id=user.id,
+            fullname=user.fullname,
+            email=user.email,
+            phone=user.phone,
+            nationality=user.nationality,
+            date_of_birth=user.date_of_birth,
+            gender=user.gender,
+            address=user.address,
+            location=user.location,
+            ghana_card=user.ghana_card,
+            profile_picture_url=user.profile_picture_url,
+            company=user.company,
+            current_branch=user.current_branch,
+            staff_id=user.staff_id,
+            occupation=user.occupation,
+            organization_workplace=user.organization_workplace,
+            facebook_url=user.facebook_url,
+            whatsapp_number=user.whatsapp_number,
+            linkedin_url=user.linkedin_url,
+            twitter_url=user.twitter_url,
+            instagram_url=user.instagram_url,
+            profile_sharing=user.profile_sharing,
+            in_app_notification=user.in_app_notification,
+            sms_notification=user.sms_notification,
+            services=services_from_user(user),
+            enabled=user.enabled,
+            status=user.status,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+        )
 
     def get_current_user(self, identifier: str) -> UserResponse:
         # Try to find by email first, then by id as a fallback.
@@ -35,71 +69,13 @@ class UserService:
             user = self.db.query(User).filter(User.id == identifier).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        return UserResponse(
-            id=user.id,
-            fullname=user.fullname,
-            email=user.email,
-            phone=user.phone,
-            
-            nationality=user.nationality,
-            date_of_birth=user.date_of_birth,
-            gender=user.gender,
-            address=user.address,
-            profile_picture_url=user.profile_picture_url,
-            
-            company=user.company,
-            current_branch=user.current_branch,
-            staff_id=user.staff_id,
-            
-            facebook_url=user.facebook_url,
-            whatsapp_number=user.whatsapp_number,
-            linkedin_url=user.linkedin_url,
-            twitter_url=user.twitter_url,
-            instagram_url=user.instagram_url,
-            
-            profile_sharing=user.profile_sharing,
-            in_app_notification=user.in_app_notification,
-            sms_notification=user.sms_notification,
-            enabled=user.enabled,
-            status=user.status,
-            created_at=user.created_at,
-            updated_at=user.updated_at
-        )
+        return self._to_response(user)
 
     def get_user_by_id(self, user_id: str) -> UserResponse:
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        return UserResponse(
-            id=user.id,
-            fullname=user.fullname,
-            email=user.email,
-            phone=user.phone,
-            
-            nationality=user.nationality,
-            date_of_birth=user.date_of_birth,
-            gender=user.gender,
-            address=user.address,
-            profile_picture_url=user.profile_picture_url,
-            
-            company=user.company,
-            current_branch=user.current_branch,
-            staff_id=user.staff_id,
-            
-            facebook_url=user.facebook_url,
-            whatsapp_number=user.whatsapp_number,
-            linkedin_url=user.linkedin_url,
-            twitter_url=user.twitter_url,
-            instagram_url=user.instagram_url,
-            
-            profile_sharing=user.profile_sharing,
-            in_app_notification=user.in_app_notification,
-            sms_notification=user.sms_notification,
-            enabled=user.enabled,
-            status=user.status,
-            created_at=user.created_at,
-            updated_at=user.updated_at
-        )
+        return self._to_response(user)
 
     def find_user_by_phone(self, phone: str) -> Optional[User]:
         """Resolve a user by phone or WhatsApp id, trying common Ghana formats."""
@@ -171,36 +147,7 @@ class UserService:
         user = self.find_user_by_phone(phone)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        return UserResponse(
-            id=user.id,
-            fullname=user.fullname,
-            email=user.email,
-            phone=user.phone,
-            
-            nationality=user.nationality,
-            date_of_birth=user.date_of_birth,
-            gender=user.gender,
-            address=user.address,
-            profile_picture_url=user.profile_picture_url,
-            
-            company=user.company,
-            current_branch=user.current_branch,
-            staff_id=user.staff_id,
-            
-            facebook_url=user.facebook_url,
-            whatsapp_number=user.whatsapp_number,
-            linkedin_url=user.linkedin_url,
-            twitter_url=user.twitter_url,
-            instagram_url=user.instagram_url,
-            
-            profile_sharing=user.profile_sharing,
-            in_app_notification=user.in_app_notification,
-            sms_notification=user.sms_notification,
-            enabled=user.enabled,
-            status=user.status,
-            created_at=user.created_at,
-            updated_at=user.updated_at
-        )
+        return self._to_response(user)
     
     def set_user_enabled_status(self, user_id: str, enabled: bool) -> MessageResponse:
         user = self.db.query(User).filter(User.id == user_id).first()
@@ -228,19 +175,21 @@ class UserService:
             "total": total,
             "page": page,
             "size": size,
-            "users": [
-                UserResponse(
-                    id=user.id,
-                    fullname=user.fullname,
-                    email=user.email,
-                    phone=user.phone,
-                    enabled=user.enabled,
-                    status=user.status,
-                    created_at=user.created_at,
-                    updated_at=user.updated_at  
-                ) for user in users
-            ]
+            "users": [self._to_response(user) for user in users]
         }
+
+    def enroll_services(self, identifier: str, services: list[str]) -> UserResponse:
+        user = self.db.query(User).filter(User.email == identifier).first()
+        if not user:
+            user = self.db.query(User).filter(User.id == identifier).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user.services = merge_services(services_from_user(user), normalize_services(services))
+        user.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(user)
+        return self._to_response(user)
 
     def update_user(self, email: str, payload: UserUpdateRequest) -> UserResponse:
             # log the update attempt

@@ -28,6 +28,7 @@ from core.user.dto.request.notification_settings_update_request import (
 )
 from core.user.dto.request.profile_image_update_request import ProfileImageUpdateRequest
 from core.user.dto.request.agent_update_request import AgentUpdateRequest
+from core.user.dto.request.services_enroll_request import ServicesEnrollRequest
 from core.user.dto.response.user_agents_response import UserAgentsResponse
 from core.user.dto.response.chat_channels_response import (
     ChatChannelDisconnectResponse,
@@ -245,6 +246,18 @@ def patch_current_user_endpoint(payload: UserUpdateRequest, authjwt: AuthJWT = D
     current_user_email = authjwt.get_jwt_subject()
     user_service = UserService(db)
     return user_service.update_current_user(current_user_email, payload)
+
+
+@user_routes.post("/me/services", response_model=UserResponse)
+def enroll_my_services(
+    payload: ServicesEnrollRequest,
+    authjwt: AuthJWT = Depends(validate_token),
+    db: Session = Depends(get_db),
+):
+    """Enroll the current user in additional product services (same account)."""
+    current_user_email = authjwt.get_jwt_subject()
+    user_service = UserService(db)
+    return user_service.enroll_services(current_user_email, payload.services)
 
 
 @user_routes.patch("/me/notification-settings", response_model=UserResponse)

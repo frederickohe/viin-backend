@@ -84,6 +84,10 @@ class AuthService:
             else None
         )
 
+        from core.user.product_services import normalize_services
+
+        enrolled_services = normalize_services(getattr(request, "services", None))
+
         db_user = User(
             id=user_id,
             fullname=request.fullname,
@@ -111,6 +115,7 @@ class AuthService:
             
             in_app_notification=request.in_app_notification,
             sms_notification=request.sms_notification,
+            services=enrolled_services,
             
             created_at=datetime.now(timezone.utc),
         )
