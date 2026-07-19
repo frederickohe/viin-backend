@@ -706,7 +706,7 @@ class AutobusNLUSystem:
             http = 200 if m.startswith(("✅", "📧")) else None
             return IntentHandlerResult(msg, http)
         elif intent in user_management_intents:
-            return self._process_user_management_intent(user_id, intent, slots)
+            return self._process_user_management_intent(user_id, intent, slots, user_data)
         elif intent in task_management_intents:
             if intent == "add_task":
                 return self._process_add_task_intent(user_id, slots, user_data)
@@ -851,12 +851,28 @@ class AutobusNLUSystem:
             task_context=task_context,
         )
 
-    def _process_user_management_intent(self, user_id: str, intent: str, slots: Dict) -> IntentHandlerResult:
+    def _process_user_management_intent(
+        self,
+        user_id: str,
+        intent: str,
+        slots: Dict,
+        user_data: Optional[Dict[str, Any]] = None,
+    ) -> IntentHandlerResult:
         """Process user management intents (update profile, view profile, update username, update phone)"""
         db = SessionLocal()
         try:
             from core.user.service.user_service import UserService
             user_service = UserService(db)
+
+            try:
+                profile_user_id = self._resolve_internal_user_id(user_id, user_data)
+            except ValueError:
+                return IntentHandlerResult(
+                    self.response_formatter.format_response(
+                        "", "account_required", channel=channel_type(user_id)
+                    ),
+                    None,
+                )
             
             if intent == "update_username":
                 new_username = slots.get("new_username")
@@ -870,13 +886,13 @@ class AutobusNLUSystem:
                     )
                 
                 update_data = {"fullname": new_username}
-                user_service.update_user_details(user_id, update_data)
+                user_service.update_user_details(profile_user_id, update_data)
                 
                 response = self.response_formatter.format_response(
                     intent, "success", 
                     message=f"Your username has been updated to '{new_username}' successfully! ✅"
                 )
-                logger.info(f"User {user_id} username updated to {new_username}")
+                logger.info(f"User {profile_user_id} username updated to {new_username}")
                 return IntentHandlerResult(response, 200)
                 
             elif intent == "update_phone_number":
@@ -891,13 +907,13 @@ class AutobusNLUSystem:
                     )
                 
                 update_data = {"phone": phone_number}
-                user_service.update_user_details(user_id, update_data)
+                user_service.update_user_details(profile_user_id, update_data)
                 
                 response = self.response_formatter.format_response(
                     intent, "success",
                     message=f"Your phone number has been updated to '{phone_number}' successfully! ✅"
                 )
-                logger.info(f"User {user_id} phone number updated to {phone_number}")
+                logger.info(f"User {profile_user_id} phone number updated to {phone_number}")
                 return IntentHandlerResult(response, 200)
             
             elif intent == "update_user_details":
@@ -916,7 +932,7 @@ class AutobusNLUSystem:
                     if slot in allowed_fields and value is not None:
                         field_name = slot_to_field.get(slot, slot)
                         update_data[field_name] = value
-                        logger.info(f"Preparing to update {field_name} for user {user_id}")
+                        logger.info(f"Preparing to update {field_name} for user {profile_user_id}")
                 
                 if not update_data:
                     return IntentHandlerResult(
@@ -926,13 +942,13 @@ class AutobusNLUSystem:
                         None,
                     )
                 
-                user_service.update_user_details(user_id, update_data)
+                user_service.update_user_details(profile_user_id, update_data)
                 response = self.response_formatter.format_response(intent, "success", message="Your profile has been updated successfully! ✅")
-                logger.info(f"User {user_id} profile updated with fields: {list(update_data.keys())}")
+                logger.info(f"User {profile_user_id} profile updated with fields: {list(update_data.keys())}")
                 return IntentHandlerResult(response, 200)
                 
             elif intent == "view_user_profile":
-                profile = user_service.get_user_profile(user_id)
+                profile = user_service.get_user_profile(profile_user_id)
                 
                 profile_details = f"""
                 📋 *Your Profile:*
@@ -947,7 +963,7 @@ class AutobusNLUSystem:
                 response = self.response_formatter.format_response(
                     intent, "success", message=profile_details
                 )
-                logger.info(f"User {user_id} viewed their profile")
+                logger.info(f"User {profile_user_id} viewed their profile")
                 return IntentHandlerResult(response, 200)
             
             else:
@@ -1347,6 +1363,9 @@ class AutobusNLUSystem:
                     "fullname": merchant.fullname,
                     "company": merchant.company,
                     "organization_workplace": merchant.organization_workplace,
+                    "occupation": merchant.occupation,
+                    "location": merchant.location,
+                    "address": merchant.address,
                     "created_at": merchant.created_at.isoformat()
                     if merchant.created_at
                     else None,
@@ -1374,6 +1393,9 @@ class AutobusNLUSystem:
                     "fullname": user.fullname,
                     "company": user.company,
                     "organization_workplace": user.organization_workplace,
+                    "occupation": user.occupation,
+                    "location": user.location,
+                    "address": user.address,
                     "created_at": user.created_at.isoformat() if user.created_at else None,
                 }
             return None

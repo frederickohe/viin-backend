@@ -209,7 +209,10 @@ class UserService:
             return self.get_user_by_id(user.id)
 
     def update_current_user(self, email: str, payload: UserUpdateRequest) -> UserResponse:
+            # Resolve like get_current_user — JWT subject may be email or user id.
             user = self.db.query(User).filter(User.email == email).first()
+            if not user:
+                user = self.db.query(User).filter(User.id == email).first()
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
@@ -298,9 +301,16 @@ class UserService:
             raise HTTPException(status_code=404, detail="User not found")
         return user
 
+    def _resolve_user_for_profile(self, user_id: str) -> User:
+        """Resolve by internal user id first, then phone (chat / NLU callers)."""
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if user:
+            return user
+        return self._resolve_user_by_phone(user_id)
+
     def update_user_details(self, user_id: str, update_data: dict) -> UserResponse:
-        """Update profile fields for the user identified by phone."""
-        user = self._resolve_user_by_phone(user_id)
+        """Update profile fields for the user identified by id or phone."""
+        user = self._resolve_user_for_profile(user_id)
         field_map = {
             "phone": "phone",
             "phone_number": "phone",
@@ -335,7 +345,7 @@ class UserService:
 
     def get_user_profile(self, user_id: str) -> dict:
         """Return a profile summary dict for NLU display."""
-        user = self._resolve_user_by_phone(user_id)
+        user = self._resolve_user_for_profile(user_id)
         email_agent = user.get_agent("email_agent") if user.agents else None
         sender_email = None
         if email_agent:

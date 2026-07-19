@@ -11,7 +11,7 @@ if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY environment variable is not set")
 
 GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
-MODEL = os.getenv("LLM_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
 AUDIO_TRANSCRIPTION_MODEL = os.getenv("AUDIO_TRANSCRIPTION_MODEL", "whisper-large-v3")
 
 # Local Model Configuration

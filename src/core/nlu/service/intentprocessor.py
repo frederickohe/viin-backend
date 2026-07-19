@@ -334,6 +334,8 @@ class IntentProcessor:
     def _format_organization_context(user_data: Dict[str, Any]) -> str:
         company = (user_data.get("company") or "").strip()
         workplace = (user_data.get("organization_workplace") or "").strip()
+        occupation = (user_data.get("occupation") or "").strip()
+        location = (user_data.get("location") or "").strip()
         fullname = (user_data.get("fullname") or "").strip()
         email = (user_data.get("email") or "").strip()
         lines = []
@@ -341,6 +343,10 @@ class IntentProcessor:
             lines.append(f"Business name: {company}")
         if workplace:
             lines.append(f"Organization / workplace: {workplace}")
+        if occupation:
+            lines.append(f"Occupation / role: {occupation}")
+        if location:
+            lines.append(f"Location: {location}")
         if fullname:
             lines.append(f"Account holder: {fullname}")
         if email:

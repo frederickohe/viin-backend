@@ -26,6 +26,9 @@ _URGENT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# delivery JSON key: one-time reminders opt out of weekly/monthly briefings
+EXCLUDE_FROM_PERIOD_BRIEFINGS_KEY = "exclude_from_period_briefings"
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -60,6 +63,16 @@ _BRIEFING_NOTE_TYPES = {
 class BriefingService:
     def __init__(self, db: Session):
         self.db = db
+
+    @staticmethod
+    def _exclude_one_time_from_period(reminder: Reminder, period: BriefingPeriod) -> bool:
+        """One-time reminders can opt out of weekly/monthly rollups via delivery JSON."""
+        if period == BriefingPeriod.DAILY:
+            return False
+        if (reminder.rrule or "").strip():
+            return False
+        delivery = reminder.delivery if isinstance(reminder.delivery, dict) else {}
+        return bool(delivery.get(EXCLUDE_FROM_PERIOD_BRIEFINGS_KEY))
 
     def build_briefing(self, *, owner_user_id: str, period: BriefingPeriod) -> str:
         tasks = self.collect_tasks(owner_user_id=owner_user_id, period=period)
@@ -152,6 +165,8 @@ class BriefingService:
             due = _ensure_aware(r.due_at)
             is_overdue = due < now
             if not is_overdue and due > window_end:
+                continue
+            if self._exclude_one_time_from_period(r, period):
                 continue
             label = (r.title or r.body or "Reminder").strip()
             tasks.append(
